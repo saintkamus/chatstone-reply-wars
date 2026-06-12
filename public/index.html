@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chatstone: The Reply Wars</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===================== LOBBY ===================== -->
+  <div id="lobby" class="overlay">
+    <div class="lobby-panel">
+      <h1 class="game-title">CHATSTONE</h1>
+      <div class="game-subtitle">The Reply Wars</div>
+
+      <div id="lobby-main" class="lobby-section">
+        <button id="btn-create" class="big-btn">Create Room</button>
+        <div class="join-row">
+          <input id="join-code" maxlength="4" placeholder="CODE" autocomplete="off">
+          <button id="btn-join" class="big-btn">Join</button>
+        </div>
+      </div>
+
+      <div id="lobby-wait" class="lobby-section hidden">
+        <div class="room-code-label">ROOM CODE</div>
+        <div id="room-code" class="room-code">----</div>
+        <div id="lobby-status" class="lobby-status">Waiting for an opponent…</div>
+        <button id="btn-start" class="big-btn glow hidden">Start Game</button>
+      </div>
+
+      <div id="lobby-error" class="lobby-error"></div>
+      <div id="conn-status" class="conn-status">connecting…</div>
+    </div>
+  </div>
+
+  <!-- ===================== GAME HUD ===================== -->
+  <div id="hud" class="hidden">
+    <!-- opponent strip -->
+    <div id="op-strip" class="player-strip top">
+      <span class="strip-name">Opponent</span>
+      <span class="pill" title="Mana"><i class="ic mana"></i><span id="op-mana">0/0</span></span>
+      <span class="pill" title="Hand"><i class="ic hand"></i><span id="op-hand">0</span></span>
+      <span class="pill" title="Deck"><i class="ic deck"></i><span id="op-deck">0</span></span>
+    </div>
+    <!-- my strip -->
+    <div id="my-strip" class="player-strip bottom">
+      <span class="strip-name">You</span>
+      <span class="pill" title="Deck"><i class="ic deck"></i><span id="my-deck">0</span></span>
+      <div id="mana-bar" title="Mana"></div>
+    </div>
+
+    <!-- turn banner -->
+    <div id="turn-banner" class="hidden"></div>
+
+    <!-- battle log -->
+    <div id="log-panel">
+      <div id="log-title">Battle Log</div>
+      <div id="log-lines"></div>
+    </div>
+
+    <!-- card preview (enlarged readable card on hover) -->
+    <div id="card-preview" class="hidden"><img id="card-preview-img" alt=""></div>
+
+    <!-- opponent played-card reveal -->
+    <div id="reveal" class="hidden"><img id="reveal-img" alt=""><div id="reveal-label"></div></div>
+
+    <!-- error toast -->
+    <div id="toast" class="hidden"></div>
+
+    <!-- cancel targeting hint -->
+    <div id="target-hint" class="hidden">Choose a target — right-click or Esc to cancel</div>
+  </div>
+
+  <!-- ===================== GAME OVER ===================== -->
+  <div id="gameover" class="overlay hidden">
+    <div class="gameover-panel">
+      <div id="gameover-title">VICTORY</div>
+      <div id="gameover-sub"></div>
+      <button id="btn-again" class="big-btn glow">Play Again</button>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

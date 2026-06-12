@@ -1,0 +1,13 @@
+{
+  "name": "chatstone-reply-wars",
+  "version": "1.0.0",
+  "description": "Chatstone: The Reply Wars - a 3D multiplayer card battler prototype (Node + ws + Three.js)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.184.0",
+    "ws": "^8.17.0"
+  }
+}

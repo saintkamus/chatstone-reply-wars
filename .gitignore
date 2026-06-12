@@ -1,0 +1,18 @@
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+
+# local/generated scratch from the build process
+fable-*.json
+fable-*.md
+tools/
+out/
+video_frames/
+video_frames_iran/
+assets/chatstone/.claude/
+*.wav
+migras-deficit-meme.jpg
+iran_contact.jpg
