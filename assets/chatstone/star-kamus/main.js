@@ -11,6 +11,10 @@ const VOICE_IDS = [
   'k_hit', 'k_respawn', 'k_power',
   'c_briefing1', 'c_heavy', 'c_warning1', 'c_briefing2', 'c_mines', 'c_warning2',
   'c_lastlife', 'c_gameover', 'c_victory',
+  // stage 3
+  'c_briefing3', 'k_stage3', 'c_swarm', 'c_warning3', 'k_boss3', 'c_pods', 'k_final',
+  // stage 4
+  'c_briefing4', 'k_stage4', 'c_armor', 'c_warning4', 'k_boss4', 'k_home',
 ];
 audio.fetchVoices('assets/voice/', VOICE_IDS);
 
@@ -23,23 +27,41 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x02030a, 90, 220);
 
-const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 1, 400);
+// guard against a zero-sized window at load (e.g. a preview panel that hasn't
+// laid out yet) — an Infinity/NaN aspect poisons every position derived from it
+const safeAspect = () => Math.max(1, window.innerWidth) / Math.max(1, window.innerHeight);
+const camera = new THREE.PerspectiveCamera(52, safeAspect(), 1, 400);
 camera.position.set(0, 3, 62);
 camera.lookAt(0, 0, 0);
 
-// visible half-extents of the z=0 gameplay plane
+// visible half-extents of the z=0 gameplay plane (screen space, side view)
 const view = { w: 40, h: 26 };
+// gameplay half-extents: fw = forward axis (+x, where enemies come from),
+// lat = lateral axis (y). In side view fw maps to screen-x; in top-down view
+// the camera is rotated 90° so fw maps to screen-y and lat to screen-x.
+const play = { fw: 40, lat: 26 };
+let viewMode = 'side'; // 'side' | 'top'
+
 function computeView() {
-  view.h = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z;
-  view.w = view.h * camera.aspect;
+  const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 62;
+  view.h = half;
+  view.w = half * camera.aspect;
+  if (viewMode === 'side') {
+    play.fw = view.w;
+    play.lat = view.h;
+  } else {
+    play.fw = half;
+    play.lat = half * camera.aspect;
+  }
 }
 computeView();
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.aspect = safeAspect();
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(Math.max(1, window.innerWidth), Math.max(1, window.innerHeight));
   computeView();
+  onViewRecovered();
 });
 
 scene.add(new THREE.AmbientLight(0x304060, 1.6));
@@ -66,10 +88,36 @@ function makeStars(count, z, size, color) {
   return pts;
 }
 const starLayers = [
-  { pts: makeStars(160, -12, 0.55, 0xffffff), speed: 26 },
-  { pts: makeStars(140, -30, 0.8, 0x9fc8ff), speed: 12 },
-  { pts: makeStars(110, -55, 1.2, 0x5f6fb8), speed: 5 },
+  { pts: makeStars(160, -12, 0.55, 0xffffff), speed: 26, z: -12 },
+  { pts: makeStars(140, -30, 0.8, 0x9fc8ff), speed: 12, z: -30 },
+  { pts: makeStars(110, -55, 1.2, 0x5f6fb8), speed: 5, z: -55 },
 ];
+
+function scatterStars() {
+  for (const layer of starLayers) {
+    const a = layer.pts.geometry.attributes.position;
+    for (let i = 0; i < a.count; i++)
+      a.setXYZ(i,
+        (Math.random() * 2 - 1) * (view.w + 30),
+        (Math.random() * 2 - 1) * (view.h + 14),
+        layer.z + (Math.random() * 2 - 1) * 4);
+    a.needsUpdate = true;
+  }
+}
+
+// if the page loaded with a degenerate size, re-scatter the backdrop once a
+// real layout arrives (positions built from a bad aspect stay broken otherwise)
+let viewWasDegenerate = !Number.isFinite(view.w) || view.w <= 5;
+function onViewRecovered() {
+  if (!viewWasDegenerate) return;
+  if (!Number.isFinite(view.w) || view.w <= 5) return;
+  viewWasDegenerate = false;
+  scatterStars();
+  planet.position.set(view.w * 0.7, -14, -110);
+  for (const r of bgRocks)
+    r.position.set((Math.random() * 2 - 1) * view.w * 1.4,
+      (Math.random() * 2 - 1) * view.h, -20 - Math.random() * 30);
+}
 function scrollStars(dt) {
   for (const layer of starLayers) {
     const a = layer.pts.geometry.attributes.position;
@@ -116,6 +164,87 @@ const bgRocks = [];
   }
 }
 
+// ---------------------------------------------------------------- planet surface (top-down stages)
+const groundGroup = new THREE.Group();
+groundGroup.visible = false;
+scene.add(groundGroup);
+const groundTiles = [];
+const clouds = [];
+{
+  const TILE = 260;
+  const grassMat = new THREE.MeshStandardMaterial({ color: 0x2e5c30, roughness: 1, flatShading: true });
+  const bldgMat = new THREE.MeshStandardMaterial({ color: 0x6a7280, roughness: 0.8, metalness: 0.2 });
+  const burnMat = new THREE.MeshStandardMaterial({ color: 0x3a2018, emissive: 0xff4400, emissiveIntensity: 0.9, roughness: 1 });
+  const treeMat = new THREE.MeshStandardMaterial({ color: 0x1d4020, roughness: 1, flatShading: true });
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 1 });
+
+  for (let t = 0; t < 2; t++) {
+    const tile = new THREE.Group();
+    const geo = new THREE.PlaneGeometry(TILE, 150, 26, 14);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setZ(i, Math.random() * -1.2); // gentle terrain dents
+    geo.computeVertexNormals();
+    tile.add(new THREE.Mesh(geo, grassMat));
+
+    for (const yy of [-14, 8, 30]) { // roads across the scroll direction
+      const road = new THREE.Mesh(new THREE.BoxGeometry(TILE, 3.2, 0.2), roadMat);
+      road.position.set(0, yy, 0.4);
+      tile.add(road);
+    }
+    for (let i = 0; i < 26; i++) { // city blocks, a few of them burning
+      const w = 2 + Math.random() * 3, d = 2 + Math.random() * 3, h = 1.5 + Math.random() * 4.5;
+      const burning = Math.random() < 0.22;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(w, d, h), burning ? burnMat : bldgMat);
+      b.position.set((Math.random() - 0.5) * (TILE - 12), (Math.random() - 0.5) * 130, h / 2);
+      tile.add(b);
+    }
+    for (let i = 0; i < 22; i++) {
+      const tr = new THREE.Mesh(new THREE.ConeGeometry(0.9 + Math.random(), 2.2 + Math.random() * 1.6, 6), treeMat);
+      tr.position.set((Math.random() - 0.5) * (TILE - 8), (Math.random() - 0.5) * 140, 1.2);
+      tr.rotation.x = Math.PI / 2;
+      tile.add(tr);
+    }
+    tile.position.set(t * TILE, 0, -8);
+    groundGroup.add(tile);
+    groundTiles.push(tile);
+  }
+
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.26, depthWrite: false });
+  for (let i = 0; i < 6; i++) {
+    const c = new THREE.Mesh(new THREE.CircleGeometry(5 + Math.random() * 9, 10), cloudMat);
+    c.position.set((Math.random() * 2 - 1) * 60, (Math.random() * 2 - 1) * 40, 14 + Math.random() * 8);
+    c.scale.y = 0.55;
+    groundGroup.add(c);
+    clouds.push(c);
+  }
+}
+
+function updateGround(dt) {
+  const TILE = 260;
+  for (const tile of groundTiles) {
+    tile.position.x -= 24 * dt;
+    if (tile.position.x < -TILE) tile.position.x += TILE * 2;
+  }
+  for (const c of clouds) {
+    c.position.x -= 40 * dt;
+    if (c.position.x < -(play.fw + 60)) {
+      c.position.x = play.fw + 60;
+      c.position.y = (Math.random() * 2 - 1) * (play.lat + 10);
+    }
+  }
+}
+
+function applyViewMode(mode) {
+  viewMode = mode;
+  const top = mode === 'top';
+  for (const l of starLayers) l.pts.visible = !top;
+  planet.visible = !top;
+  for (const r of bgRocks) r.visible = !top;
+  groundGroup.visible = top;
+  scene.fog.far = top ? 170 : 220;
+  computeView();
+}
+
 // ---------------------------------------------------------------- player
 const ship = new THREE.Group();
 {
@@ -148,7 +277,7 @@ const ship = new THREE.Group();
 }
 
 const player = {
-  pos: new THREE.Vector3(-view.w + 12, 0, 0),
+  pos: new THREE.Vector3(-play.fw + 12, 0, 0),
   speed: 34,
   radius: 1.5,
   fireCool: 0,
@@ -158,6 +287,12 @@ const player = {
   alive: true,
   respawnT: 0,
 };
+
+// 2D distance on the gameplay plane — z is presentation only (ground units
+// sit below the flight plane but are still shootable / dodgeable)
+function d2(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
 
 // ---------------------------------------------------------------- pools
 function makePool(n, build) {
@@ -184,7 +319,7 @@ const playerBullets = makePool(70, () => {
 });
 const eBulletMat = new THREE.MeshBasicMaterial({ color: 0xff7040 });
 const eBulletCoreMat = new THREE.MeshBasicMaterial({ color: 0xffe0a0 });
-const enemyBullets = makePool(140, () => {
+const enemyBullets = makePool(220, () => {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(new THREE.SphereGeometry(0.55, 8, 8), eBulletMat));
   g.add(new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8), eBulletCoreMat));
@@ -241,6 +376,9 @@ const mineMat = new THREE.MeshStandardMaterial({ color: 0x33383f, emissive: 0x0c
 const mineGlowMat = new THREE.MeshBasicMaterial({ color: 0xff3030 });
 const orbiterMat = new THREE.MeshStandardMaterial({ color: 0xb060ff, emissive: 0x30104a, metalness: 0.5, roughness: 0.3 });
 const astMat = new THREE.MeshStandardMaterial({ color: 0x8a7a68, roughness: 1 });
+const weaverMat = new THREE.MeshStandardMaterial({ color: 0xd040a0, emissive: 0x400a30, metalness: 0.5, roughness: 0.35 });
+const raiderMat = new THREE.MeshStandardMaterial({ color: 0x40e0d0, emissive: 0x0a3830, metalness: 0.6, roughness: 0.3 });
+const tankMat = new THREE.MeshStandardMaterial({ color: 0x4f5a3a, emissive: 0x11140a, metalness: 0.5, roughness: 0.6 });
 
 function buildEnemy(type) {
   const g = new THREE.Group();
@@ -293,6 +431,37 @@ function buildEnemy(type) {
       new THREE.MeshBasicMaterial({ color: 0xd0a0ff }));
     ring.rotation.x = Math.PI / 3;
     g.add(ring);
+  } else if (type === 'weaver') {
+    g.add(new THREE.Mesh(new THREE.OctahedronGeometry(1.25), weaverMat));
+    for (const zz of [-1.3, 1.3]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.14, 1.5), weaverMat);
+      wing.position.z = zz;
+      g.add(wing);
+    }
+  } else if (type === 'raider') {
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.0, 3.0, 4), raiderMat);
+    nose.rotation.z = Math.PI / 2; // point -x
+    nose.scale.y = 0.55;
+    g.add(nose);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.8, 0.12), raiderMat);
+    fin.position.x = 1.0;
+    g.add(fin);
+  } else if (type === 'tank') {
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(3.0, 2.2, 1.0), tankMat);
+    g.add(hull);
+    for (const yy of [-1.3, 1.3]) {
+      const tread = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 0.9), turretMat);
+      tread.position.set(0, yy, -0.2);
+      g.add(tread);
+    }
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8), tankMat);
+    dome.position.z = 0.8;
+    g.add(dome);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.6, 6), turretMat);
+    barrel.rotation.z = Math.PI / 2;
+    barrel.position.set(-1.6, 0, 0.9);
+    g.add(barrel);
+    g.userData.turret = dome;
   } else if (type === 'ast' || type === 'astS') {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(type === 'ast' ? 2.2 : 1.0, 0), astMat);
     rock.scale.set(1, 0.75 + Math.random() * 0.5, 0.9);
@@ -311,13 +480,16 @@ const ENEMY_DEFS = {
   orbiter: { hp: 2, radius: 1.4, score: 250 },
   ast:     { hp: 3, radius: 2.4, score: 50 },
   astS:    { hp: 1, radius: 1.2, score: 20 },
+  weaver:  { hp: 2, radius: 1.6, score: 220 },
+  raider:  { hp: 1, radius: 1.5, score: 180 },
+  tank:    { hp: 3, radius: 2.0, score: 300 }, // ground unit: shootable, but no ram
 };
 
 function spawnEnemy(type, y, opts) {
   const def = ENEMY_DEFS[type];
   const mesh = buildEnemy(type);
   const o = opts || {};
-  mesh.position.set(o.x !== undefined ? o.x : view.w + 6, y, 0);
+  mesh.position.set(o.x !== undefined ? o.x : play.fw + 6, y, type === 'tank' ? -6 : 0);
   scene.add(mesh);
   enemies.push({
     type, mesh, hp: def.hp, radius: def.radius, score: def.score,
@@ -360,6 +532,8 @@ function enemyFire(from, speed, angleOff) {
   const b = take(enemyBullets);
   if (!b) return;
   b.mesh.position.copy(from);
+  b.mesh.scale.setScalar(1);
+  b.home = 0;
   const dir = new THREE.Vector3().subVectors(player.pos, from).normalize();
   if (angleOff) {
     const a = Math.atan2(dir.y, dir.x) + angleOff;
@@ -374,8 +548,23 @@ function enemyFireAngle(from, angle, speed) {
   const b = take(enemyBullets);
   if (!b) return;
   b.mesh.position.copy(from);
+  b.mesh.scale.setScalar(1);
+  b.home = 0;
   b.vel.set(Math.cos(angle) * speed, Math.sin(angle) * speed, 0);
   b.life = 7;
+}
+
+// slow orb that curves toward the player for a while, then flies straight
+function enemyFireHoming(from, speed) {
+  const b = take(enemyBullets);
+  if (!b) return;
+  b.mesh.position.copy(from);
+  b.mesh.scale.setScalar(1.45);
+  b.home = 1.8;
+  const dir = new THREE.Vector3().subVectors(player.pos, from).normalize();
+  b.vel.copy(dir.multiplyScalar(speed));
+  b.life = 7;
+  audio.enemyShoot();
 }
 
 function updateEnemies(dt) {
@@ -397,15 +586,24 @@ function updateEnemies(dt) {
       m.position.x -= 9 * dt;
       m.rotation.z += 1.2 * dt;
       e.fireCool -= dt;
-      if (e.fireCool <= 0 && m.position.x < view.w - 4 && player.alive) {
+      if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
         enemyFire(m.position, 24);
         e.fireCool = 2.2;
+      }
+    } else if (e.type === 'tank') {
+      m.position.x -= 20 * dt; // crawling with the ground scroll
+      m.userData.turret.rotation.z = Math.atan2(
+        player.pos.y - m.position.y, player.pos.x - m.position.x);
+      e.fireCool -= dt;
+      if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
+        enemyFire(m.position, 22);
+        e.fireCool = 2.6;
       }
     } else if (e.type === 'heavy') {
       m.position.x -= 7 * dt;
       m.position.y = e.baseY + Math.sin(e.t * 1.2) * 2;
       e.fireCool -= dt;
-      if (e.fireCool <= 0 && m.position.x < view.w - 6 && player.alive) {
+      if (e.fireCool <= 0 && m.position.x < play.fw - 6 && player.alive) {
         enemyFire(m.position, 22, 0);
         enemyFire(m.position, 22, 0.3);
         enemyFire(m.position, 22, -0.3);
@@ -416,33 +614,55 @@ function updateEnemies(dt) {
       m.position.y = e.baseY + Math.sin(e.t * 1.6) * 1.4;
       m.rotation.z += 0.8 * dt;
       m.userData.glow.visible = Math.floor(e.t * 4) % 2 === 0;
-      if (player.alive && m.position.distanceTo(player.pos) < 6) {
+      if (player.alive && d2(m.position, player.pos) < 6) {
         detonateMine(e, i);
         continue;
       }
     } else if (e.type === 'orbiter') {
-      e.cx = (e.cx ?? view.w + 6) - 12 * dt;
+      e.cx = (e.cx ?? play.fw + 6) - 12 * dt;
       const a = (e.a0 || 0) + e.t * (e.omega || 2);
       m.position.set(e.cx + Math.cos(a) * 3.4, e.baseY + Math.sin(a) * 3.4, 0);
       m.rotation.y += 3 * dt;
       e.fireCool -= dt;
-      if (e.fireCool <= 0 && m.position.x < view.w - 4 && player.alive) {
+      if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
         enemyFire(m.position, 23);
         e.fireCool = 2.6;
+      }
+    } else if (e.type === 'weaver') {
+      m.position.x -= 14 * dt;
+      m.position.y = e.baseY + Math.sin(e.t * 2 + (e.phase || 0)) * (e.amp ?? 7);
+      m.rotation.x += 4 * dt;
+      e.fireCool -= dt;
+      if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
+        enemyFire(m.position, 25);
+        e.fireCool = 2.8;
+      }
+    } else if (e.type === 'raider') {
+      m.position.x -= (e.sp || 28) * dt;
+      m.position.y += (e.vy || 0) * dt;
+      m.rotation.x += 8 * dt;
+      if (!e.fired && m.position.x < play.fw * 0.4 && player.alive) {
+        e.fired = true;
+        enemyFire(m.position, 26);
+      }
+      if (Math.abs(m.position.y) > play.lat + 8) {
+        scene.remove(m);
+        enemies.splice(i, 1);
+        continue;
       }
     } else if (e.type === 'ast' || e.type === 'astS') {
       m.position.x -= (e.sp || 12) * dt;
       m.position.y += (e.vy || 0) * dt;
       m.rotation.x += (e.type === 'ast' ? 0.7 : 2.2) * dt;
       m.rotation.y += 0.5 * dt;
-      if (Math.abs(m.position.y) > view.h + 8) {
+      if (Math.abs(m.position.y) > play.lat + 8) {
         scene.remove(m);
         enemies.splice(i, 1);
         continue;
       }
     }
 
-    if (m.position.x < -view.w - 8) {
+    if (m.position.x < -play.fw - 8) {
       scene.remove(m);
       enemies.splice(i, 1);
     }
@@ -491,7 +711,7 @@ function makeCarrier() {
     g.add(fl);
   }
   g.userData = { core, ring };
-  g.position.set(view.w + 24, 0, 0);
+  g.position.set(play.fw + 24, 0, 0);
   scene.add(g);
   return {
     kind: 'carrier', mesh: g, hp: 260, maxHp: 260, radius: 6.5,
@@ -523,7 +743,7 @@ function makeSerpent() {
   head.add(jaw);
   const headLight = new THREE.PointLight(0x60ff90, 40, 30);
   head.add(headLight);
-  head.position.set(view.w + 30, 0, 0);
+  head.position.set(play.fw + 30, 0, 0);
   scene.add(head);
 
   const segs = [], segR = [];
@@ -552,6 +772,121 @@ function makeSerpent() {
   };
 }
 
+function makeFortress() {
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0xffa040, emissive: 0xa03010, metalness: 0.3, roughness: 0.25 });
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0x4a3a55, emissive: 0x140a18, metalness: 0.7, roughness: 0.45 });
+
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(3, 1), coreMat);
+  g.add(core);
+  const rings = [];
+  for (const [rx, ry] of [[Math.PI / 2, 0], [Math.PI / 6, Math.PI / 3]]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(5, 0.5, 8, 40), armorMat);
+    ring.rotation.set(rx, ry, 0);
+    g.add(ring);
+    rings.push(ring);
+  }
+  for (let i = 0; i < 4; i++) { // diagonal armor plates
+    const a = Math.PI / 4 + i * Math.PI / 2;
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 4.6, 2.6), armorMat);
+    plate.position.set(Math.cos(a) * 6.4, Math.sin(a) * 6.4, 0);
+    plate.rotation.z = a;
+    g.add(plate);
+  }
+  g.add(new THREE.PointLight(0xff8030, 80, 50));
+  g.position.set(play.fw + 26, 0, 0);
+  scene.add(g);
+
+  const pods = [];
+  for (const a0 of [0, Math.PI]) {
+    const pm = new THREE.Group();
+    pm.add(new THREE.Mesh(new THREE.SphereGeometry(1.9, 12, 10), turretMat));
+    for (let i = 0; i < 6; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.5, 6), spikeMat);
+      const a = i / 6 * Math.PI * 2;
+      sp.position.set(Math.cos(a) * 2.1, Math.sin(a) * 2.1, 0);
+      sp.rotation.z = a - Math.PI / 2;
+      pm.add(sp);
+    }
+    pm.position.copy(g.position);
+    scene.add(pm);
+    pods.push({ mesh: pm, hp: 55, alive: true, a0 });
+  }
+
+  return {
+    kind: 'fortress', mesh: g, core, coreMat, rings, pods,
+    hp: 320, maxHp: 320, totalMax: 430, bounty: 15000,
+    radius: 4.6, podR: 2.5, t: 0, entered: false, dying: 0,
+    spiralA: 0, spiralT: 0,
+    dashT: 8, dashPhase: 'idle', dashClock: 0, dashX: 0,
+    cool: { pod: 2.2, fan: 3.2, aim: 2.4, ring: 3, spawn: 5, homing: 3.2, mine: 6 },
+  };
+}
+
+function destroyPod(p) {
+  p.alive = false;
+  burst(p.mesh.position, 24, 22, 1.3);
+  audio.explode();
+  addScore(2000);
+  scene.remove(p.mesh);
+  shake = Math.max(shake, 0.7);
+  if (boss && !boss.pods.some((q) => q.alive))
+    say('commander', "Shield generators down — the core is exposed! Hit it with everything you've got!", 'c_pods', 3);
+}
+
+// stage 4 boss: a colossal strip-mining crawler on the planet surface
+function makeHarvester() {
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x7a3a22, emissive: 0x1c0c06, metalness: 0.6, roughness: 0.5 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x2e2622, metalness: 0.7, roughness: 0.6 });
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x40ff80, emissive: 0x10a040, metalness: 0.3, roughness: 0.25 });
+
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(12, 9, 3.5), hullMat));
+  for (const yy of [-5.6, 5.6]) { // giant treads
+    const tread = new THREE.Mesh(new THREE.BoxGeometry(15, 2.6, 2.4), darkMat);
+    tread.position.set(0, yy, -1);
+    g.add(tread);
+  }
+  // front scoop maw
+  const scoop = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.4, 9, 8, 1, true), darkMat);
+  scoop.rotation.z = Math.PI / 2;
+  scoop.position.set(-7.5, 0, -0.5);
+  g.add(scoop);
+  // twin shoulder cannons
+  const cannons = [];
+  for (const yy of [-3.6, 3.6]) {
+    const gun = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 5, 8), darkMat);
+    gun.rotation.z = Math.PI / 2;
+    gun.position.set(-5, yy, 2.2);
+    g.add(gun);
+    cannons.push(new THREE.Vector3(-7.5, yy, 0));
+  }
+  // exposed reactor core on the spine — the weak point
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 1), coreMat);
+  core.position.set(-2.5, 0, 2.8);
+  g.add(core);
+  const cage = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.25, 6, 24), darkMat);
+  cage.position.copy(core.position);
+  g.add(cage);
+  g.add(new THREE.PointLight(0x40ff80, 60, 40));
+  for (const yy of [2.5, -2.5]) { // smokestacks
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 3, 7), hullMat);
+    stack.rotation.x = Math.PI / 2;
+    stack.position.set(4.5, yy, 3);
+    g.add(stack);
+  }
+  g.position.set(play.fw + 26, 0, -4);
+  scene.add(g);
+
+  return {
+    kind: 'harvester', mesh: g, core, coreMat, cage, cannons,
+    hp: 340, maxHp: 340, bounty: 20000,
+    radius: 6.8, t: 0, entered: false, dying: 0,
+    dashT: 9, dashPhase: 'idle', dashClock: 0, dashX: 0,
+    cool: { aim: 2.2, fan: 3.4, ring: 3, spawn: 6, homing: 3, barrage: 2.2 },
+  };
+}
+
 function spawnBoss() {
   const st = STAGES[stageIdx];
   boss = st.makeBoss();
@@ -561,8 +896,10 @@ function spawnBoss() {
 }
 
 function updateBossBar() {
+  let hp = boss.hp;
+  if (boss.pods) for (const p of boss.pods) if (p.alive) hp += Math.max(0, p.hp);
   document.getElementById('bossbar').style.width =
-    Math.max(0, boss.hp / boss.maxHp * 100) + '%';
+    Math.max(0, hp / (boss.totalMax || boss.maxHp) * 100) + '%';
 }
 
 function bossPhase() {
@@ -572,6 +909,7 @@ function bossPhase() {
 function removeBoss() {
   scene.remove(boss.mesh);
   if (boss.segs) for (const s of boss.segs) scene.remove(s);
+  if (boss.pods) for (const p of boss.pods) if (p.alive) scene.remove(p.mesh);
   boss = null;
   document.getElementById('bossbar-wrap').classList.remove('on');
 }
@@ -579,7 +917,9 @@ function removeBoss() {
 function updateBoss(dt) {
   if (!boss) return;
   if (boss.kind === 'carrier') updateCarrier(dt);
-  else updateSerpent(dt);
+  else if (boss.kind === 'serpent') updateSerpent(dt);
+  else if (boss.kind === 'fortress') updateFortress(dt);
+  else updateHarvester(dt);
 }
 
 function updateCarrier(dt) {
@@ -609,7 +949,7 @@ function updateCarrier(dt) {
 
   if (!b.entered) {
     m.position.x -= 12 * dt;
-    if (m.position.x <= view.w - 16) {
+    if (m.position.x <= play.fw - 16) {
       b.entered = true;
       say('kamus', 'Whoa— that thing is HUGE. Locking on to the core.', 'k_boss1');
     }
@@ -618,8 +958,8 @@ function updateCarrier(dt) {
 
   const phase = bossPhase();
   const speedMul = phase === 1 ? 1 : phase === 2 ? 1.4 : 1.8;
-  m.position.y = Math.sin(b.t * 0.7 * speedMul) * (view.h - 12);
-  m.position.x = view.w - 16 + Math.sin(b.t * 0.4) * 3;
+  m.position.y = Math.sin(b.t * 0.7 * speedMul) * (play.lat - 12);
+  m.position.x = play.fw - 16 + Math.sin(b.t * 0.4) * 3;
 
   const corePos = m.position.clone().add(new THREE.Vector3(-7.4, 0, 0));
   if (!player.alive) return;
@@ -649,7 +989,7 @@ function updateCarrier(dt) {
   if (phase === 3) {
     b.cool.spawn -= dt;
     if (b.cool.spawn <= 0) {
-      spawnEnemy('drone', (Math.random() * 2 - 1) * (view.h - 8), { amp: 4 });
+      spawnEnemy('drone', (Math.random() * 2 - 1) * (play.lat - 8), { amp: 4 });
       b.cool.spawn = 4;
     }
   }
@@ -682,7 +1022,7 @@ function updateSerpent(dt) {
 
   if (!b.entered) {
     head.position.x -= 16 * dt;
-    if (head.position.x <= view.w * 0.55) {
+    if (head.position.x <= play.fw * 0.55) {
       b.entered = true;
       say('kamus', "It moves like a snake... aim for the head. Got it.", 'k_boss2');
     }
@@ -690,8 +1030,8 @@ function updateSerpent(dt) {
     const phase = bossPhase();
     const sp = phase === 1 ? 1 : phase === 2 ? 1.3 : 1.6;
     const target = new THREE.Vector3(
-      view.w * 0.28 + Math.sin(b.t * 0.55 * sp) * view.w * 0.42,
-      Math.sin(b.t * 0.9 * sp + 1.2) * (view.h - 8), 0);
+      play.fw * 0.28 + Math.sin(b.t * 0.55 * sp) * play.fw * 0.42,
+      Math.sin(b.t * 0.9 * sp + 1.2) * (play.lat - 8), 0);
     head.position.lerp(target, Math.min(1, 3.2 * dt));
   }
 
@@ -745,8 +1085,285 @@ function updateSerpent(dt) {
     b.cool.spawn -= dt;
     if (b.cool.spawn <= 0) {
       const tail = b.segs[b.segs.length - 1];
-      spawnEnemy('mine', tail.position.y, { x: Math.min(tail.position.x, view.w - 4) });
+      spawnEnemy('mine', tail.position.y, { x: Math.min(tail.position.x, play.fw - 4) });
       b.cool.spawn = 5;
+    }
+  }
+}
+
+function updateFortress(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.rings[0].rotation.z += 0.9 * dt;
+  b.rings[1].rotation.z -= 1.3 * dt;
+  b.core.rotation.y += 1.2 * dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (Math.random() < 0.45) {
+      const p = m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 6));
+      burst(p, 14, 22, 1.4);
+      audio.explode();
+      shake = Math.max(shake, 0.7);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 70, 32, 2.2);
+      audio.bigExplode();
+      shake = 1.6;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 11 * dt;
+    if (m.position.x <= play.fw - 18) {
+      b.entered = true;
+      say('kamus', 'A fortress?! ...Fine. Big things make big targets.', 'k_boss3');
+    }
+  }
+
+  const podsAlive = b.pods.some((p) => p.alive);
+  const phase = podsAlive ? 0
+    : b.hp > b.maxHp * 0.55 ? 1
+    : b.hp > b.maxHp * 0.2 ? 2 : 3;
+
+  if (b.entered) {
+    // telegraphed dash toward the player (late phases)
+    if (phase >= 2) {
+      if (b.dashPhase === 'idle') {
+        b.dashT -= dt;
+        if (b.dashT <= 0) {
+          b.dashPhase = 'tele';
+          b.dashClock = 0.6;
+          b.coreMat.emissive.setHex(0xffffff);
+          audio.hit();
+        }
+      } else if (b.dashPhase === 'tele') {
+        b.dashClock -= dt;
+        if (b.dashClock <= 0) {
+          b.dashPhase = 'lunge';
+          b.dashClock = 0.55;
+          b.coreMat.emissive.setHex(0xa03010);
+        }
+      } else if (b.dashPhase === 'lunge') {
+        b.dashClock -= dt;
+        b.dashX = Math.max(b.dashX - 38 * dt, -play.fw * 0.9);
+        if (b.dashClock <= 0) b.dashPhase = 'return';
+      } else { // return
+        b.dashX += 16 * dt;
+        if (b.dashX >= 0) {
+          b.dashX = 0;
+          b.dashPhase = 'idle';
+          b.dashT = phase === 3 ? 5.5 : 7;
+        }
+      }
+    }
+    m.position.x = play.fw - 18 + Math.sin(b.t * 0.5) * 2.5 + b.dashX;
+    m.position.y = Math.sin(b.t * 0.75) * (play.lat - 13);
+  }
+
+  // pods orbit the core
+  for (const p of b.pods) {
+    if (!p.alive) continue;
+    const a = p.a0 + b.t * 0.95;
+    p.mesh.position.set(m.position.x + Math.cos(a) * 8.5, m.position.y + Math.sin(a) * 8.5, 0);
+    p.mesh.rotation.z += 2 * dt;
+  }
+
+  if (!b.entered || !player.alive) return;
+
+  if (podsAlive) {
+    b.cool.pod -= dt;
+    if (b.cool.pod <= 0) {
+      for (const p of b.pods) {
+        if (!p.alive) continue;
+        const from = p.mesh.position.clone();
+        enemyFire(from, 26);
+        setTimeout(() => {
+          if (boss && boss.kind === 'fortress' && !boss.dying && player.alive) enemyFire(from, 26);
+        }, 140);
+      }
+      b.cool.pod = 2.4;
+    }
+    b.cool.fan -= dt;
+    if (b.cool.fan <= 0) {
+      for (let k = -2; k <= 2; k++) enemyFire(m.position, 22, k * 0.24);
+      b.cool.fan = 3.4;
+    }
+    return;
+  }
+
+  // core exposed: rotating spiral stream(s)
+  const spiralInt = phase === 3 ? 0.085 : phase === 2 ? 0.1 : 0.11;
+  const spiralSp = phase === 3 ? 21 : 19;
+  b.spiralT += dt;
+  while (b.spiralT >= spiralInt) {
+    b.spiralT -= spiralInt;
+    enemyFireAngle(m.position, b.spiralA, spiralSp);
+    if (phase >= 2) enemyFireAngle(m.position, -b.spiralA + Math.PI, spiralSp);
+    b.spiralA += 0.42;
+  }
+
+  b.cool.aim -= dt;
+  if (b.cool.aim <= 0) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'fortress' && !boss.dying && player.alive) enemyFire(boss.mesh.position, 30);
+      }, k * 130);
+    b.cool.aim = phase === 1 ? 2.4 : 2.0;
+  }
+  if (phase >= 2) {
+    b.cool.homing -= dt;
+    if (b.cool.homing <= 0) {
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, 4, 0)), 17);
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, -4, 0)), 17);
+      b.cool.homing = phase === 3 ? 2.8 : 3.2;
+    }
+  }
+  if (phase === 3) {
+    b.cool.ring -= dt;
+    if (b.cool.ring <= 0) {
+      const off = Math.random() * Math.PI;
+      for (let k = 0; k < 14; k++)
+        enemyFireAngle(m.position, off + k / 14 * Math.PI * 2, 16);
+      audio.enemyShoot();
+      b.cool.ring = 3;
+    }
+    b.cool.mine -= dt;
+    if (b.cool.mine <= 0) {
+      spawnEnemy('mine', m.position.y, { x: Math.max(m.position.x - 10, -play.fw + 10) });
+      b.cool.mine = 6;
+    }
+  }
+  b.cool.spawn -= dt;
+  if (phase >= 1 && b.cool.spawn <= 0) {
+    spawnEnemy('drone', (Math.random() * 2 - 1) * (play.lat - 8), { amp: 4 });
+    b.cool.spawn = 5;
+  }
+}
+
+function updateHarvester(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.core.rotation.y += 1.4 * dt;
+  b.cage.rotation.x += 1.8 * dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (Math.random() < 0.45) {
+      const p = m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 12, Math.random() * 5));
+      burst(p, 14, 22, 1.4);
+      audio.explode();
+      shake = Math.max(shake, 0.7);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 70, 32, 2.2);
+      audio.bigExplode();
+      shake = 1.6;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 10 * dt;
+    if (m.position.x <= play.fw - 15) {
+      b.entered = true;
+      say('kamus', "It's EATING the city! Get off my planet, you overgrown lawnmower!", 'k_boss4');
+    }
+  }
+
+  const phase = b.hp > b.maxHp * 0.7 ? 1 : b.hp > b.maxHp * 0.45 ? 2 : b.hp > b.maxHp * 0.2 ? 3 : 4;
+
+  if (b.entered) {
+    // telegraphed forward charge (late phases): it revs and plows toward you
+    if (phase >= 3) {
+      if (b.dashPhase === 'idle') {
+        b.dashT -= dt;
+        if (b.dashT <= 0) {
+          b.dashPhase = 'tele';
+          b.dashClock = 0.7;
+          b.coreMat.emissive.setHex(0xffffff);
+          audio.hit();
+        }
+      } else if (b.dashPhase === 'tele') {
+        b.dashClock -= dt;
+        if (b.dashClock <= 0) {
+          b.dashPhase = 'lunge';
+          b.dashClock = 0.6;
+          b.coreMat.emissive.setHex(0x10a040);
+        }
+      } else if (b.dashPhase === 'lunge') {
+        b.dashClock -= dt;
+        b.dashX = Math.max(b.dashX - 42 * dt, -play.fw * 0.95);
+        if (b.dashClock <= 0) b.dashPhase = 'return';
+      } else {
+        b.dashX += 15 * dt;
+        if (b.dashX >= 0) {
+          b.dashX = 0;
+          b.dashPhase = 'idle';
+          b.dashT = phase === 4 ? 5 : 7;
+        }
+      }
+    }
+    const sp = phase >= 3 ? 1.4 : 1;
+    m.position.x = play.fw - 15 + Math.sin(b.t * 0.35) * 2 + b.dashX;
+    m.position.y = Math.sin(b.t * 0.55 * sp) * (play.lat - 12);
+    m.rotation.z = Math.sin(b.t * 4) * 0.012; // heavy machinery shudder
+  }
+
+  if (!b.entered || !player.alive) return;
+
+  // twin cannon alternating aimed bursts
+  b.cool.aim -= dt;
+  if (b.cool.aim <= 0) {
+    b.gunSide = !b.gunSide;
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'harvester' && !boss.dying && player.alive)
+          enemyFire(boss.mesh.position.clone().add(boss.cannons[b.gunSide ? 0 : 1]), 28);
+      }, k * 120);
+    b.cool.aim = phase === 1 ? 2.4 : phase === 2 ? 1.9 : 1.5;
+  }
+  b.cool.fan -= dt;
+  if (b.cool.fan <= 0) {
+    for (let k = -2; k <= 2; k++) enemyFire(m.position, 23, k * 0.24);
+    b.cool.fan = phase >= 3 ? 2.8 : 3.6;
+  }
+  if (phase >= 2) {
+    b.cool.ring -= dt;
+    if (b.cool.ring <= 0) { // mortar ring bursting outward
+      const n = phase >= 4 ? 16 : 12;
+      const off = Math.random() * Math.PI;
+      for (let k = 0; k < n; k++)
+        enemyFireAngle(m.position, off + k / n * Math.PI * 2, 15);
+      audio.enemyShoot();
+      b.cool.ring = phase >= 4 ? 2.4 : 3.2;
+    }
+    b.cool.spawn -= dt;
+    if (b.cool.spawn <= 0) { // rolls out escort tanks
+      spawnEnemy('tank', m.position.y + (Math.random() > 0.5 ? 8 : -8));
+      b.cool.spawn = phase >= 3 ? 4.5 : 6;
+    }
+  }
+  if (phase >= 3) {
+    b.cool.homing -= dt;
+    if (b.cool.homing <= 0) {
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, 5, 0)), 17);
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, -5, 0)), 17);
+      b.cool.homing = phase === 4 ? 2.6 : 3.2;
+    }
+  }
+  if (phase === 4) {
+    b.cool.barrage -= dt;
+    if (b.cool.barrage <= 0) {
+      for (let k = -3; k <= 3; k++) enemyFire(m.position, 26, k * 0.14);
+      b.cool.barrage = 2.4;
     }
   }
 }
@@ -756,8 +1373,8 @@ function hitBoss(dmg) {
   boss.hp -= dmg;
   updateBossBar();
   if (boss.hp <= 0) {
-    boss.dying = 2.6;
-    addScore(10000);
+    boss.dying = boss.kind === 'fortress' || boss.kind === 'harvester' ? 3.2 : 2.6;
+    addScore(boss.bounty || 10000);
     audio.stopSong();
     audio.bigExplode();
   }
@@ -860,11 +1477,30 @@ const TIMELINE2 = [
   { t: 85,   fn: bossArrive },
 ];
 
+function raiders(n) {
+  for (let i = 0; i < n; i++)
+    setTimeout(() => {
+      if (state !== 'playing') return;
+      const top = i % 2 === 0;
+      spawnEnemy('raider', top ? view.h - 4 : -(view.h - 4), {
+        vy: (top ? -1 : 1) * (12 + Math.random() * 6),
+        sp: 26 + Math.random() * 8,
+      });
+    }, i * 450);
+}
+function weaverWall(ys) {
+  ys.forEach((y, i) => spawnEnemy('weaver', y, { phase: i * 1.3 }));
+}
+function tankRow(ys) {
+  ys.forEach((y, i) =>
+    setTimeout(() => { if (state === 'playing') spawnEnemy('tank', y); }, i * 400));
+}
+
 // stage 2 ambient hazard: a steady drizzle of asteroids until the boss warning
 function beltAmbient(dt) {
   astTimer -= dt;
   if (astTimer <= 0 && levelTime > 4 && levelTime < 78) {
-    spawnEnemy('ast', (Math.random() * 2 - 1) * (view.h - 4), {
+    spawnEnemy('ast', (Math.random() * 2 - 1) * (play.lat - 4), {
       vy: (Math.random() - 0.5) * 7,
       sp: 10 + Math.random() * 8,
     });
@@ -872,20 +1508,99 @@ function beltAmbient(dt) {
   }
 }
 
+// stage 3 ambient: faster, denser rock storm
+function mawAmbient(dt) {
+  astTimer -= dt;
+  if (astTimer <= 0 && levelTime > 4 && levelTime < 80) {
+    spawnEnemy('ast', (Math.random() * 2 - 1) * (play.lat - 4), {
+      vy: (Math.random() - 0.5) * 9,
+      sp: 14 + Math.random() * 9,
+    });
+    astTimer = 1.2 + Math.random() * 1.1;
+  }
+}
+
+const TIMELINE3 = [
+  { t: 0.5,  fn: () => say('commander',
+      "Negative on that homecoming, Kamus. We traced the swarm to its source — a fortress core deep in the Gorgon's Maw. End this, and the sector sleeps easy.", 'c_briefing3', 4.5) },
+  { t: 2.5,  fn: () => say('kamus', 'Rain check on dinner, then. Punching through!', 'k_stage3', 2.5) },
+  { t: 4,    fn: () => { droneWave(6, 6, 5); droneWave(6, -6, 5, 300); } },
+  { t: 8,    fn: () => weaverWall([8, 0, -8]) },
+  { t: 12,   fn: () => { darterStack([12, 7, 2, -3, -8, -13]); mineRow([10, -10]); } },
+  { t: 16,   fn: () => { orbiterPair(7); orbiterPair(-7); spawnEnemy('weaver', 0); } },
+  { t: 21,   fn: () => { raiders(4); droneWave(5, 0, 10); } },
+  { t: 26,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); spawnEnemy('heavy', -8); weaverWall([10, -2]); } },
+  { t: 31,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('turret', 0); spawnEnemy('turret', -8); darterStack([10, 4, -2, -8, -12]) } },
+  { t: 35,   fn: () => say('commander', "Swarm density is off the charts — they're throwing everything at you. Stay loose!", 'c_swarm', 3) },
+  { t: 36,   fn: () => { droneWave(12, 0, 12, 200); raiders(3); } },
+  { t: 41,   fn: () => { mineRow([12, 8, 4, 0, -4, -8, -12]); weaverWall([6, -6, 0]); } },
+  { t: 46,   fn: () => { orbiterPair(9); orbiterPair(0); orbiterPair(-9); darterStack([11, 5, -1, -7, -11, 8]); } },
+  { t: 52,   fn: () => { spawnEnemy('heavy', 6, { drops: true }); spawnEnemy('heavy', -6); spawnEnemy('turret', 0); spawnEnemy('turret', 11); droneWave(6, -11, 4, 250); } },
+  { t: 58,   fn: () => { raiders(6); mineRow([8, 0, -8]); } },
+  { t: 63,   fn: () => { weaverWall([12, 6, -6, -12]); droneWave(8, 0, 9, 250); } },
+  { t: 69,   fn: () => { spawnEnemy('turret', 10); spawnEnemy('turret', -10); spawnEnemy('turret', 5); spawnEnemy('turret', -5); darterStack([13, 9, 3, -3, -9, -13, 0]); } },
+  { t: 75,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); orbiterPair(8); orbiterPair(-8); droneWave(6, 0, 12, 220); raiders(3); } },
+  { t: 81,   fn: () => bossWarning('c_warning3',
+      "That's it... the MEDUSA PRIME. Twin shield generators, then the core. Take it apart, Kamus!") },
+  { t: 86,   fn: bossArrive },
+];
+
+const TIMELINE4 = [
+  { t: 0.5,  fn: () => say('commander',
+      "Kamus... about that dinner. The homeworld just went dark — the swarm beat you there. They're burning YOUR city.", 'c_briefing4', 4.5) },
+  { t: 3,    fn: () => say('kamus', 'My city... Alright, Swarm. Now it\'s PERSONAL.', 'k_stage4', 3) },
+  { t: 5,    fn: () => droneWave(5, 5, 5) },
+  { t: 9,    fn: () => tankRow([8, 0, -8]) },
+  { t: 13,   fn: () => { darterStack([10, 4, -2, -8]); droneWave(4, -10, 4) } },
+  { t: 17,   fn: () => say('commander', "They've landed armor. Watch for ground fire!", 'c_armor', 3) },
+  { t: 18,   fn: () => { tankRow([10, 3, -4, -11]); weaverWall([7, -7]); } },
+  { t: 24,   fn: () => { raiders(4); droneWave(5, 0, 9); } },
+  { t: 29,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); tankRow([9, -9]); } },
+  { t: 35,   fn: () => { orbiterPair(7); orbiterPair(-7); darterStack([11, 5, -1, -7, -12]); } },
+  { t: 41,   fn: () => { tankRow([12, 6, 0, -6, -12]); droneWave(6, 8, 5, 300); } },
+  { t: 47,   fn: () => { weaverWall([9, 0, -9]); raiders(3); } },
+  { t: 53,   fn: () => { spawnEnemy('heavy', -5); spawnEnemy('heavy', 7, { drops: true }); tankRow([10, 0, -10]); } },
+  { t: 59,   fn: () => { droneWave(10, 0, 12, 240); darterStack([8, -8]); } },
+  { t: 65,   fn: () => { tankRow([11, 4, -4, -11]); orbiterPair(0); weaverWall([8, -8]); } },
+  { t: 72,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); raiders(4); tankRow([7, -7]); } },
+  { t: 78,   fn: () => { droneWave(8, 0, 10, 240); darterStack([10, 5, -5, -10]); } },
+  { t: 82,   fn: () => bossWarning('c_warning4',
+      "Seismic contact... something COLOSSAL is chewing through the capital. Kamus — kill the World Eater!") },
+  { t: 87,   fn: bossArrive },
+];
+
 const STAGES = [
   {
-    name: 'STAGE 1 — SECTOR 7 APPROACH',
+    name: 'STAGE 1 — SECTOR 7 APPROACH', place: 'SECTOR 7',
     song: 'level', bossSong: 'boss',
     bossName: 'GORGON VORTEX - DREAD CARRIER',
     timeline: TIMELINE1, ambient: null, makeBoss: makeCarrier,
     theme: { planet: 0x7040a0, planetEm: 0x1a0a30, ring: 0xc0a0ff },
+    clearSay: () => say('kamus', 'Carrier down! Sector Seven is breathing again.', 'k_clear1', 3),
   },
   {
-    name: 'STAGE 2 — THE SHATTERED BELT',
+    name: 'STAGE 2 — THE SHATTERED BELT', place: 'THE SHATTERED BELT',
     song: 'level2', bossSong: 'boss2',
     bossName: 'BASILISK REX - BELT SERPENT',
     timeline: TIMELINE2, ambient: beltAmbient, makeBoss: makeSerpent,
     theme: { planet: 0xb05a28, planetEm: 0x301206, ring: 0xffc08a },
+    clearSay: () => say('kamus', "Basilisk destroyed! Command... I'm coming home.", 'k_victory', 3),
+  },
+  {
+    name: "STAGE 3 — THE GORGON'S MAW", place: "THE GORGON'S MAW",
+    song: 'level3', bossSong: 'boss3',
+    bossName: 'MEDUSA PRIME - FORTRESS CORE',
+    timeline: TIMELINE3, ambient: mawAmbient, makeBoss: makeFortress,
+    theme: { planet: 0x8a2020, planetEm: 0x3a0808, ring: 0xff8060 },
+    clearSay: () => say('kamus', "Fortress core destroyed! That's checkmate... Command, I'm REALLY coming home this time.", 'k_final', 3.5),
+  },
+  {
+    name: 'STAGE 4 — COMING HOME TO TROUBLE', place: 'THE HOMEWORLD',
+    view: 'top',
+    song: 'level4', bossSong: 'boss4',
+    bossName: 'HARVESTER TYRANT - WORLD EATER',
+    timeline: TIMELINE4, ambient: null, makeBoss: makeHarvester,
+    theme: { planet: 0x2e5c30, planetEm: 0x0a2010, ring: 0x88c090 },
   },
 ];
 
@@ -895,12 +1610,19 @@ window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code))
     e.preventDefault();
-  firstGesture();
-  if (e.code === 'Enter') menuAdvance();
+  // on the title screen, the very first interaction only unlocks audio
+  // (browsers block sound until a gesture) so the title theme gets heard
+  const consumed = firstGesture();
+  if (state !== 'paused') audio.resume();
+  if (e.code === 'Enter' && !consumed) menuAdvance();
   if (e.code === 'KeyP' && (state === 'playing' || state === 'paused')) togglePause();
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-window.addEventListener('pointerdown', () => { firstGesture(); menuAdvance(); });
+window.addEventListener('pointerdown', () => {
+  const consumed = firstGesture();
+  if (state !== 'paused') audio.resume();
+  if (!consumed) menuAdvance();
+});
 
 let padStartPrev = false;
 function readInput() {
@@ -1108,11 +1830,17 @@ let state = 'title'; // title | playing | paused | gameover | clear | victory
 let shake = 0;
 let audioStarted = false;
 
+// returns true if this gesture was consumed to unlock audio on the title screen
 function firstGesture() {
-  if (audioStarted) return;
+  if (audioStarted) return false;
   audioStarted = true;
   audio.init();
-  if (state === 'title') audio.playSong('title');
+  if (state === 'title') {
+    audio.playSong('title');
+    el('title-press').textContent = 'PRESS ENTER / START TO LAUNCH';
+    return true;
+  }
+  return false;
 }
 
 function menuAdvance() {
@@ -1122,6 +1850,8 @@ function menuAdvance() {
 
 function toTitle() {
   cleanupField();
+  applyViewMode('side');
+  ship.rotation.set(0, 0, 0);
   state = 'title';
   el('gameover').classList.remove('on');
   el('clear').classList.remove('on');
@@ -1137,6 +1867,7 @@ function startStage(i, fresh) {
   cleanupField();
   stageIdx = i;
   const st = STAGES[i];
+  applyViewMode(st.view || 'side');
   state = 'playing';
   levelTime = 0;
   eventIdx = 0;
@@ -1150,7 +1881,8 @@ function startStage(i, fresh) {
   }
   player.alive = true;
   player.invuln = 2.5;
-  player.pos.set(-view.w + 12, 0, 0);
+  player.pos.set(-play.fw + 12, 0, 0);
+  ship.rotation.set(0, 0, 0);
   ship.visible = true;
   el('title').classList.remove('on');
   el('gameover').classList.remove('on');
@@ -1227,21 +1959,24 @@ function gameOver() {
 function stageClear() {
   if (state !== 'playing') return;
   addScore(0);
-  if (stageIdx === 0) {
+  if (stageIdx < STAGES.length - 1) {
     state = 'clear';
     player.lives += 1; // reinforcement ship
     updateLivesHud();
     audio.playSong('clear');
-    say('kamus', 'Carrier down! Sector Seven is breathing again.', 'k_clear1', 3);
+    if (STAGES[stageIdx].clearSay) STAGES[stageIdx].clearSay();
+    el('clear-title').textContent = 'STAGE ' + (stageIdx + 1) + ' CLEAR';
     el('clear-score').textContent = 'SCORE : ' + score + '   —   REINFORCEMENT SHIP +1';
+    el('clear-next').textContent = 'ENTERING ' + STAGES[stageIdx + 1].place + '...';
     el('clear').classList.add('on');
+    const next = stageIdx + 1;
     setTimeout(() => {
-      if (state === 'clear') startStage(1, false);
+      if (state === 'clear') startStage(next, false);
     }, 6500);
   } else {
     state = 'victory';
     audio.playSong('victory');
-    say('kamus', "Basilisk destroyed! Command... I'm coming home.", 'k_victory', 3);
+    say('kamus', 'World Eater eaten. The homeworld is safe... NOW somebody owes me dinner.', 'k_home', 3.5);
     say('commander', "Confirmed kill... the belt is clear. Outstanding flying, Kamus. Come home — dinner's on me.", 'c_victory', 4);
     el('v-score').textContent = 'FINAL SCORE : ' + score;
     el('victory').classList.add('on');
@@ -1270,21 +2005,36 @@ function updatePlayer(dt, input) {
     if (player.respawnT <= 0 && player.lives >= 0) {
       player.alive = true;
       player.invuln = 2.5;
-      player.pos.set(-view.w + 12, 0, 0);
+      player.pos.set(-play.fw + 12, 0, 0);
       ship.visible = true;
       say('kamus', 'New ship, same pilot. Back in the fight!', 'k_respawn', 2);
     }
     return;
   }
-  player.pos.x += input.x * player.speed * dt;
-  player.pos.y += input.y * player.speed * dt;
-  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -view.w + 4, view.w * 0.35);
-  player.pos.y = THREE.MathUtils.clamp(player.pos.y, -view.h + 4.5, view.h - 5.5);
+  if (viewMode === 'top') {
+    // top-down: up-key flies up-screen (+x world), left/right strafes (screen-right = -y)
+    player.pos.x += input.y * player.speed * dt;
+    player.pos.y -= input.x * player.speed * dt;
+  } else {
+    player.pos.x += input.x * player.speed * dt;
+    player.pos.y += input.y * player.speed * dt;
+  }
+  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 4, play.fw * 0.35);
+  player.pos.y = THREE.MathUtils.clamp(player.pos.y, -play.lat + 4.5, play.lat - 5.5);
   ship.position.copy(player.pos);
-  ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, -input.y * 0.55, 10 * dt);
-  ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, input.x * 0.18, 10 * dt);
+  if (viewMode === 'top') {
+    // roll into strafes, seen from above
+    ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, input.x * 0.6, 10 * dt);
+    ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, -input.x * 0.16, 10 * dt);
+    ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, 0, 10 * dt);
+  } else {
+    ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, -input.y * 0.55, 10 * dt);
+    ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, input.x * 0.18, 10 * dt);
+    ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, 0, 10 * dt);
+  }
+  const boost = viewMode === 'top' ? input.y : input.x;
   const fl = ship.userData.flame;
-  fl.scale.y = 0.8 + Math.random() * 0.5 + (input.x > 0 ? 0.5 : 0);
+  fl.scale.y = 0.8 + Math.random() * 0.5 + (boost > 0 ? 0.5 : 0);
   fl.material.color.setHSL(0.52 + Math.random() * 0.05, 1, 0.6 + Math.random() * 0.2);
 
   if (player.invuln > 0) {
@@ -1305,15 +2055,26 @@ function updateBullets(dt) {
     if (!b.active) continue;
     b.mesh.position.addScaledVector(b.vel, dt);
     b.life -= dt;
-    if (b.life <= 0 || b.mesh.position.x > view.w + 8) release(b);
+    if (b.life <= 0 || b.mesh.position.x > play.fw + 8) release(b);
   }
   for (const b of enemyBullets) {
     if (!b.active) continue;
+    if (b.home > 0 && player.alive) {
+      b.home -= dt;
+      const cur = Math.atan2(b.vel.y, b.vel.x);
+      const tgt = Math.atan2(player.pos.y - b.mesh.position.y, player.pos.x - b.mesh.position.x);
+      let d = tgt - cur;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      const na = cur + THREE.MathUtils.clamp(d, -2.6 * dt, 2.6 * dt);
+      const sp = b.vel.length();
+      b.vel.set(Math.cos(na) * sp, Math.sin(na) * sp, 0);
+    }
     b.mesh.position.addScaledVector(b.vel, dt);
     b.mesh.rotation.z += 6 * dt;
     b.life -= dt;
     const p = b.mesh.position;
-    if (b.life <= 0 || Math.abs(p.x) > view.w + 10 || Math.abs(p.y) > view.h + 10) release(b);
+    if (b.life <= 0 || Math.abs(p.x) > play.fw + 10 || Math.abs(p.y) > play.lat + 10) release(b);
   }
   for (const p of particles) {
     if (!p.active) continue;
@@ -1331,7 +2092,7 @@ function updateBullets(dt) {
     p.mesh.rotation.y += 3 * dt;
     p.mesh.rotation.x += 2 * dt;
     p.life -= dt;
-    if (p.life <= 0 || p.mesh.position.x < -view.w - 6) release(p);
+    if (p.life <= 0 || p.mesh.position.x < -play.fw - 6) release(p);
   }
 }
 
@@ -1340,25 +2101,51 @@ function bossBulletDamage(bp) {
   if (!boss || !boss.entered || boss.dying > 0) return 0;
   if (boss.kind === 'carrier') {
     const corePos = boss.mesh.position.clone().add(new THREE.Vector3(-7.4, 0, 0));
-    if (bp.distanceTo(corePos) < 4.5) { flashCarrierCore(); return 2; } // core sweet spot
-    if (bp.distanceTo(boss.mesh.position) < boss.radius) return 1;
+    if (d2(bp, corePos) < 4.5) { flashCarrierCore(); return 2; } // core sweet spot
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
     return 0;
   }
-  // serpent: only the head takes damage, the body armors it
-  if (bp.distanceTo(boss.mesh.position) < boss.radius) return 1;
-  for (let i = 0; i < boss.segs.length; i++) {
-    if (bp.distanceTo(boss.segs[i].position) < boss.segR[i]) return -1; // blocked
+  if (boss.kind === 'serpent') {
+    // only the head takes damage, the body armors it
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    for (let i = 0; i < boss.segs.length; i++) {
+      if (d2(bp, boss.segs[i].position) < boss.segR[i]) return -1; // blocked
+    }
+    return 0;
   }
+  if (boss.kind === 'fortress') {
+    // pods are targets; the core is shielded until both pods die
+    for (const p of boss.pods) {
+      if (p.alive && d2(bp, p.mesh.position) < boss.podR + 0.6) {
+        p.hp -= 1;
+        if (p.hp <= 0) destroyPod(p);
+        updateBossBar();
+        return -1; // absorbed by the pod (damage already applied)
+      }
+    }
+    if (d2(bp, boss.mesh.position) < boss.radius + 0.5)
+      return boss.pods.some((p) => p.alive) ? -1 : 1;
+    return 0;
+  }
+  // harvester: exposed spine reactor takes double damage
+  const reactor = boss.mesh.position.clone().add(boss.core.position);
+  if (d2(bp, reactor) < 2.8) return 2;
+  if (d2(bp, boss.mesh.position) < boss.radius) return 1;
   return 0;
 }
 
 function bossTouchesPlayer() {
   if (!boss || boss.dying > 0) return false;
-  if (boss.kind === 'carrier')
-    return boss.mesh.position.distanceTo(player.pos) < boss.radius + player.radius;
-  if (boss.mesh.position.distanceTo(player.pos) < boss.radius + player.radius) return true;
-  for (let i = 0; i < boss.segs.length; i++)
-    if (boss.segs[i].position.distanceTo(player.pos) < boss.segR[i] + player.radius) return true;
+  // the harvester is a ground unit: you fly safely above it (its guns are the threat)
+  if (boss.kind !== 'harvester' &&
+      d2(boss.mesh.position, player.pos) < boss.radius + player.radius) return true;
+  if (boss.kind === 'serpent') {
+    for (let i = 0; i < boss.segs.length; i++)
+      if (d2(boss.segs[i].position, player.pos) < boss.segR[i] + player.radius) return true;
+  } else if (boss.kind === 'fortress') {
+    for (const p of boss.pods)
+      if (p.alive && d2(p.mesh.position, player.pos) < boss.podR + player.radius) return true;
+  }
   return false;
 }
 
@@ -1370,7 +2157,7 @@ function collide() {
     let hit = false;
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
-      if (bp.distanceTo(e.mesh.position) < e.radius + 0.8) {
+      if (d2(bp, e.mesh.position) < e.radius + 0.8) {
         e.hp -= 1;
         audio.hit();
         burst(bp, 3, 8, 0.5);
@@ -1395,7 +2182,7 @@ function collide() {
 
   for (const b of enemyBullets) {
     if (!b.active) continue;
-    if (b.mesh.position.distanceTo(player.pos) < player.radius + 0.6) {
+    if (d2(b.mesh.position, player.pos) < player.radius + 0.6) {
       release(b);
       playerDie();
       return;
@@ -1403,7 +2190,8 @@ function collide() {
   }
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
-    if (e.mesh.position.distanceTo(player.pos) < e.radius + player.radius) {
+    if (e.type === 'tank') continue; // ground unit: you fly above it
+    if (d2(e.mesh.position, player.pos) < e.radius + player.radius) {
       killEnemy(e, i);
       playerDie();
       return;
@@ -1415,7 +2203,7 @@ function collide() {
   }
   for (const p of powerups) {
     if (!p.active) continue;
-    if (p.mesh.position.distanceTo(player.pos) < 3) {
+    if (d2(p.mesh.position, player.pos) < 3) {
       release(p);
       if (player.weapon < 3) player.weapon += 1;
       else addScore(1000);
@@ -1434,29 +2222,38 @@ function collide() {
 const clock = new THREE.Clock();
 
 function frame() {
-  requestAnimationFrame(frame);
+  // rAF stalls in hidden/background tabs; fall back to a timer so the game
+  // (and headless testing) keeps running
+  if (document.hidden) setTimeout(frame, 33);
+  else requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
   const input = readInput();
 
   if (input.startEdge) {
-    firstGesture();
-    if (state === 'title' || state === 'gameover' || state === 'victory') menuAdvance();
-    else if (state === 'playing' || state === 'paused') togglePause();
+    const consumed = firstGesture();
+    if (!consumed) {
+      if (state === 'title' || state === 'gameover' || state === 'victory') menuAdvance();
+      else if (state === 'playing' || state === 'paused') togglePause();
+    }
   }
 
   if (state === 'paused') { renderer.render(scene, camera); return; }
 
-  scrollStars(dt);
-  planet.rotation.y += 0.02 * dt;
-  planet.position.x -= 0.4 * dt;
-  if (planet.position.x < -view.w * 1.6) planet.position.x = view.w * 1.6;
-  for (const r of bgRocks) {
-    r.position.x -= r.userData.speed * dt;
-    r.rotation.x += r.userData.spin * dt;
-    r.rotation.y += r.userData.spin * 0.7 * dt;
-    if (r.position.x < -view.w * 1.5) {
-      r.position.x = view.w * 1.5;
-      r.position.y = (Math.random() * 2 - 1) * view.h;
+  if (viewMode === 'top') {
+    updateGround(dt);
+  } else {
+    scrollStars(dt);
+    planet.rotation.y += 0.02 * dt;
+    planet.position.x -= 0.4 * dt;
+    if (planet.position.x < -view.w * 1.6) planet.position.x = view.w * 1.6;
+    for (const r of bgRocks) {
+      r.position.x -= r.userData.speed * dt;
+      r.rotation.x += r.userData.spin * dt;
+      r.rotation.y += r.userData.spin * 0.7 * dt;
+      if (r.position.x < -view.w * 1.5) {
+        r.position.x = view.w * 1.5;
+        r.position.y = (Math.random() * 2 - 1) * view.h;
+      }
     }
   }
 
@@ -1483,7 +2280,7 @@ function frame() {
     if (state === 'title') {
       ship.visible = true;
       const t = clock.elapsedTime;
-      player.pos.set(-view.w + 14 + Math.sin(t * 0.6) * 3, Math.sin(t * 0.9) * 4, 0);
+      player.pos.set(-play.fw + 14 + Math.sin(t * 0.6) * 3, Math.sin(t * 0.9) * 4, 0);
       ship.position.copy(player.pos);
       ship.rotation.x = Math.sin(t * 0.9) * -0.3;
       ship.userData.flame.scale.y = 0.8 + Math.random() * 0.4;
@@ -1496,9 +2293,15 @@ function frame() {
   shake = Math.max(0, shake - dt * 2.5);
   const sx = (Math.random() - 0.5) * shake * 1.6;
   const sy = (Math.random() - 0.5) * shake * 1.6;
-  camera.position.x = player.pos.x * 0.06 + sx;
-  camera.position.y = 3 + player.pos.y * 0.08 + sy;
-  camera.lookAt(camera.position.x, camera.position.y - 3, 0);
+  if (viewMode === 'top') {
+    camera.up.set(1, 0, 0); // world +x = screen up: enemies pour in from the top
+    camera.position.set(player.pos.x * 0.05 + sx, player.pos.y * 0.08 + sy, 62);
+    camera.lookAt(camera.position.x, camera.position.y, 0);
+  } else {
+    camera.up.set(0, 1, 0);
+    camera.position.set(player.pos.x * 0.06 + sx, 3 + player.pos.y * 0.08 + sy, 62);
+    camera.lookAt(camera.position.x, camera.position.y - 3, 0);
+  }
 
   renderer.render(scene, camera);
 }
@@ -1520,6 +2323,8 @@ window.__sk = {
   say,
   audio,
   voiceIds: VOICE_IDS,
+  scene,
+  play,
 };
 
 updateLivesHud();

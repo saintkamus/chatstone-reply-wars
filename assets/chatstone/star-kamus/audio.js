@@ -170,6 +170,109 @@ const SONG_BOSS2 = {
   ],
 };
 
+// ---------- LEVEL 3 THEME : "March on the Maw" (D minor, 172bpm, 8 bars) ----------
+const LEVEL3_LEAD = [
+  [0, 74, .5], [.5, 77, .5], [1, 74, .5], [1.5, 77, .5], [2, 79, 1], [3, 77, .5], [3.5, 76, .5],
+  [4, 74, 1], [5, 72, .5], [5.5, 70, .5], [6, 74, 2],
+  [8, 76, .5], [8.5, 79, .5], [9, 84, 1], [10, 81, .5], [10.5, 79, .5], [11, 76, 1],
+  [12, 77, .5], [12.5, 76, .5], [13, 74, 1], [14, 69, 2],
+  [16, 86, .5], [16.5, 81, .5], [17, 86, .5], [17.5, 81, .5], [18, 84, 1], [19, 81, 1],
+  [20, 82, 1], [21, 81, .5], [21.5, 79, .5], [22, 77, 1], [23, 79, 1],
+  [24, 81, .5], [24.5, 79, .5], [25, 77, .5], [25.5, 76, .5], [26, 73, 1], [27, 76, 1],
+  [28, 74, .5], [28.5, 77, .5], [29, 81, .5], [29.5, 84, .5], [30, 86, 2],
+];
+const LEVEL3_ROOTS = [38, 46, 36, 38, 38, 43, 45, 38]; // Dm Bb C Dm Dm Gm A Dm
+const LEVEL3_STABS = [[62, 65], [58, 62], [60, 64], [62, 65], [62, 65], [55, 58], [57, 61], [62, 65]];
+
+const SONG_LEVEL3 = {
+  bpm: 172, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 7, notes: LEVEL3_LEAD },
+    { wave: 'square', gain: 0.05, detune: 9, notes: LEVEL3_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL3_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL3_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i % 4 === 3 ? { kick: [0, 1.5, 2, 3.5], snare: [1, 3, 3.75] }
+                    : { kick: [0, 1.5, 2] })).flat() },
+  ],
+};
+
+// ---------- BOSS 3 THEME : "Medusa Prime" (C minor chromatic, 184bpm, 4 bars) ----------
+const BOSS3_LEAD = [
+  [0, 72, .5], [.5, 75, .5], [1, 73, .5], [1.5, 75, .5], [2, 72, 1], [3, 67, 1],
+  [4, 68, .5], [4.5, 72, .5], [5, 70, .5], [5.5, 72, .5], [6, 68, 1], [7, 63, 1],
+  [8, 75, .5], [8.5, 79, .5], [9, 77, .5], [9.5, 79, .5], [10, 75, 1], [11, 73, 1],
+  [12, 73, .5], [12.5, 72, .5], [13, 70, .5], [13.5, 68, .5], [14, 67, 1], [15, 73, 1],
+];
+const BOSS3_ROOTS = [36, 36, 37, 36]; // C C Db C — half-step dread
+const BOSS3_BASS_PAT = [0, 0, 0, 1, 0, 12, 7, 6];
+const BOSS3_STABS = [[60, 63], [60, 63], [61, 65], [60, 63]];
+
+const SONG_BOSS3 = {
+  bpm: 184, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 10, notes: BOSS3_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 11, notes: BOSS3_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, BOSS3_BASS_PAT), BOSS3_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS3_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .75, 1.5, 2, 2.75], snare: [1, 3],
+        hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 4 THEME : "Homecoming Under Fire" (G minor, 164bpm, 8 bars) ----------
+const LEVEL4_LEAD = [
+  [0, 74, .5], [.5, 70, .5], [1, 74, .5], [1.5, 77, .5], [2, 79, 1], [3, 77, .5], [3.5, 74, .5],
+  [4, 75, 1], [5, 74, .5], [5.5, 72, .5], [6, 70, 2],
+  [8, 74, .5], [8.5, 77, .5], [9, 82, 1], [10, 79, .5], [10.5, 77, .5], [11, 74, 1],
+  [12, 77, 1], [13, 75, .5], [13.5, 72, .5], [14, 69, 2],
+  [16, 79, .5], [16.5, 82, .5], [17, 86, 1], [18, 84, .5], [18.5, 82, .5], [19, 79, 1],
+  [20, 79, 1], [21, 77, .5], [21.5, 75, .5], [22, 74, 1], [23, 75, 1],
+  [24, 77, .5], [24.5, 79, .5], [25, 81, 1], [26, 79, .5], [26.5, 77, .5], [27, 74, 1],
+  [28, 74, 1], [29, 73, 1], [30, 78, 2],
+];
+const LEVEL4_ROOTS = [43, 39, 46, 41, 43, 39, 41, 38]; // Gm Eb Bb F Gm Eb F D
+const LEVEL4_STABS = [[55, 58], [51, 55], [58, 62], [53, 57], [55, 58], [51, 55], [53, 57], [50, 54]];
+
+const SONG_LEVEL4 = {
+  bpm: 164, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 6, notes: LEVEL4_LEAD },
+    { wave: 'square', gain: 0.05, detune: 8, notes: LEVEL4_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL4_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL4_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i === 7 ? { kick: [0, 2, 3.5], snare: [1, 3, 3.75] } : null)).flat() },
+  ],
+};
+
+// ---------- BOSS 4 THEME : "World Eater" (F minor stomp, 176bpm, 4 bars) ----------
+const BOSS4_LEAD = [
+  [0, 77, .5], [.5, 80, .5], [1, 79, .5], [1.5, 80, .5], [2, 77, 1], [3, 72, 1],
+  [4, 73, .5], [4.5, 77, .5], [5, 75, .5], [5.5, 77, .5], [6, 73, 1], [7, 68, 1],
+  [8, 80, .5], [8.5, 84, .5], [9, 82, .5], [9.5, 84, .5], [10, 80, 1], [11, 79, 1],
+  [12, 79, .5], [12.5, 77, .5], [13, 75, .5], [13.5, 73, .5], [14, 72, 1], [15, 77, 1],
+];
+const BOSS4_ROOTS = [41, 41, 44, 41]; // F F Ab F
+const BOSS4_BASS_PAT = [0, 0, 1, 0, 0, 7, 6, 1];
+const BOSS4_STABS = [[53, 56], [53, 56], [56, 60], [53, 56]];
+
+const SONG_BOSS4 = {
+  bpm: 176, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 9, notes: BOSS4_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 10, notes: BOSS4_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, BOSS4_BASS_PAT), BOSS4_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS4_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1, 2, 3], snare: [1, 3], // four-on-the-floor walker stomp
+        hat: [.5, 1.5, 2.5, 3.5],
+      })).flat() },
+  ],
+};
+
 // ---------- VICTORY FANFARE ----------
 const SONG_VICTORY = {
   bpm: 132, beats: 12, loop: false,
@@ -196,6 +299,8 @@ const SONGS = {
   level: SONG_LEVEL, boss: SONG_BOSS, title: SONG_TITLE,
   clear: SONG_CLEAR, gameover: SONG_GAMEOVER,
   level2: SONG_LEVEL2, boss2: SONG_BOSS2, victory: SONG_VICTORY,
+  level3: SONG_LEVEL3, boss3: SONG_BOSS3,
+  level4: SONG_LEVEL4, boss4: SONG_BOSS4,
 };
 
 // ---------- engine ----------
