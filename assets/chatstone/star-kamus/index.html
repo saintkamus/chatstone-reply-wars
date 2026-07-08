@@ -29,7 +29,7 @@
   #hud.on{display:flex;}
   .hud-block{display:flex;align-items:center;gap:10px;}
   #avatar{image-rendering:pixelated;width:48px;height:48px;border:2px solid var(--cyan);
-          box-shadow:0 0 10px rgba(62,230,255,.5);background:#04101c;}
+          box-shadow:0 0 10px rgba(62,230,255,.5);background:#04101c;object-fit:cover;}
   #pilot-label{font-size:11px;letter-spacing:2px;color:var(--cyan);}
   #lives{font-size:15px;color:var(--green);letter-spacing:4px;}
   #score-block{text-align:center;}
@@ -103,7 +103,7 @@
 
 <div id="hud">
   <div class="hud-block">
-    <canvas id="avatar" width="16" height="16"></canvas>
+    <img id="avatar" alt="">
     <div>
       <div id="pilot-label" class="hud-text">PILOT&nbsp;:&nbsp;KAMUS</div>
       <div id="lives" class="hud-text">&#9650;&#9650;&#9650;</div>
@@ -169,6 +169,7 @@
   <div class="clear-big hud-text" style="color:var(--cyan)">PAUSED</div>
 </div>
 
-<script type="module" src="./main.js"></script>
+<!-- bump ?v= when main.js/audio.js change: the preview proxy caches modules hard -->
+<script type="module" src="./main.js?v=13"></script>
 </body>
 </html>

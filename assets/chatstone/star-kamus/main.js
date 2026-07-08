@@ -1,6 +1,6 @@
 // STAR KAMUS — side-view 3D space shooter. Two stages, two very angry bosses.
 import * as THREE from './vendor/three.module.js';
-import { ChipAudio } from './audio.js';
+import { ChipAudio } from './audio.js?v=13';
 
 const audio = new ChipAudio();
 
@@ -12,9 +12,32 @@ const VOICE_IDS = [
   'c_briefing1', 'c_heavy', 'c_warning1', 'c_briefing2', 'c_mines', 'c_warning2',
   'c_lastlife', 'c_gameover', 'c_victory',
   // stage 3
-  'c_briefing3', 'k_stage3', 'c_swarm', 'c_warning3', 'k_boss3', 'c_pods', 'k_final',
+  'c_briefing3', 'k_stage3', 'z_swarm', 'c_warning3', 'k_boss3', 'c_pods', 'k_final',
   // stage 4
   'c_briefing4', 'k_stage4', 'c_armor', 'c_warning4', 'k_boss4', 'k_home',
+  // stage 5
+  'k_clear4', 'c_briefing5', 'k_stage5', 'd_burrow', 'c_warning5', 'k_boss5',
+  // supporting cast (short-film characters): n=Nova z=Zeraa d=Dr.Klorp v=Vex
+  'n_shield', 'v_taunt1',
+  // stage 6
+  'k_clear5', 'c_briefing6', 'k_stage6', 'n_junk', 'c_warning6', 'k_boss6', 'k_scrap',
+  // stage 7 — the betrayal
+  'k_clear6', 'z_passage', 'c_briefing7', 'k_stage7',
+  'z_betray', 'k_betray', 'v_gloat', 'c_rage',
+  'c_warning7', 'z_boss', 'z_flee', 'n_orbital', 'k_survive',
+  // stage 8 — the ghost nebula
+  'k_clear7', 'c_steel', 'c_briefing8', 'k_stage8', 'd_ghost', 'c_warning8', 'k_boss8', 'z_watch',
+  // stage 9 — the brood-hive
+  'k_clear8', 'c_map', 'c_briefing9', 'k_stage9', 'd_hive', 'v_fury', 'c_warning9', 'k_boss9',
+  // stage 10 — the armada
+  'k_clear9', 'c_briefing10', 'k_stage10', 'n_argo', 'v_taunt10', 'z_assist',
+  'c_warning10', 'k_boss10', 'v_boss10', 'v_shock', 'z_side', 'v_flee',
+  // stage 11 — the palace
+  'k_clear10', 'c_briefing11', 'k_stage11', 'v_palace', 'c_shield', 'z_gate',
+  'c_warning11', 'v_boss11', 'k_boss11', 'v_defeat',
+  // stage 12 — the finale
+  'k_clear11', 'c_briefing12', 'k_stage12', 'c_dive', 'k_core', 'c_warning12',
+  'v_eternal', 'v_form2', 'z_sacrifice', 'k_rage', 'v_end', 'z_alive',
 ];
 audio.fetchVoices('assets/voice/', VOICE_IDS);
 
@@ -40,7 +63,7 @@ const view = { w: 40, h: 26 };
 // lat = lateral axis (y). In side view fw maps to screen-x; in top-down view
 // the camera is rotated 90° so fw maps to screen-y and lat to screen-x.
 const play = { fw: 40, lat: 26 };
-let viewMode = 'side'; // 'side' | 'top'
+let viewMode = 'side'; // 'side' | 'top' | 'rail'
 
 function computeView() {
   const half = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 62;
@@ -49,9 +72,14 @@ function computeView() {
   if (viewMode === 'side') {
     play.fw = view.w;
     play.lat = view.h;
-  } else {
+  } else if (viewMode === 'top') {
     play.fw = half;
     play.lat = half * camera.aspect;
+  } else {
+    // rail: camera chases the ship down the +x axis; fw = draw distance ahead,
+    // lat = track width. Fixed sizes — perspective does the rest.
+    play.fw = 60;
+    play.lat = 26;
   }
 }
 computeView();
@@ -170,9 +198,11 @@ groundGroup.visible = false;
 scene.add(groundGroup);
 const groundTiles = [];
 const clouds = [];
+let grassMatRef;
 {
   const TILE = 260;
   const grassMat = new THREE.MeshStandardMaterial({ color: 0x2e5c30, roughness: 1, flatShading: true });
+  grassMatRef = grassMat;
   const bldgMat = new THREE.MeshStandardMaterial({ color: 0x6a7280, roughness: 0.8, metalness: 0.2 });
   const burnMat = new THREE.MeshStandardMaterial({ color: 0x3a2018, emissive: 0xff4400, emissiveIntensity: 0.9, roughness: 1 });
   const treeMat = new THREE.MeshStandardMaterial({ color: 0x1d4020, roughness: 1, flatShading: true });
@@ -205,6 +235,7 @@ const clouds = [];
       tile.add(tr);
     }
     tile.position.set(t * TILE, 0, -8);
+    tile.userData.deco = tile.children.slice(4); // buildings + trees (hidden on rail stages)
     groundGroup.add(tile);
     groundTiles.push(tile);
   }
@@ -219,14 +250,91 @@ const clouds = [];
   }
 }
 
+// canyon walls (stage 5): two wrapping ridges of rock pinning the lateral edges
+const canyonGroup = new THREE.Group();
+canyonGroup.visible = false;
+groundGroup.add(canyonGroup);
+const canyonWalls = [];
+{
+  const canyonMat = new THREE.MeshStandardMaterial({ color: 0x6a3a26, roughness: 1, flatShading: true });
+  for (let s = 0; s < 2; s++) {
+    for (const side of [-1, 1]) {
+      const wall = new THREE.Group();
+      for (let i = 0; i < 9; i++) {
+        const r = new THREE.Mesh(new THREE.DodecahedronGeometry(3.5 + Math.random() * 3, 0), canyonMat);
+        r.position.set(i * 29 - 130 + (Math.random() - 0.5) * 10,
+          (Math.random() - 0.5) * 4, -3 + Math.random() * 2);
+        r.scale.z = 1.6;
+        r.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+        wall.add(r);
+      }
+      wall.userData.side = side;
+      wall.userData.seg = s;
+      canyonGroup.add(wall);
+      canyonWalls.push(wall);
+    }
+  }
+}
+function canyonWallY() {
+  return Math.min(play.lat * 0.75, 34);
+}
+
+// rail-mode conduit: glowing pylons + overhead arch rings streaming past
+const railGroup = new THREE.Group();
+railGroup.visible = false;
+groundGroup.add(railGroup);
+const railSegs = [];
+let railMats; // recolorable per stage (neon conduit vs. bone-and-sinew hive)
+{
+  const pylonMatA = new THREE.MeshBasicMaterial({ color: 0x3ee6ff });
+  const pylonMatB = new THREE.MeshBasicMaterial({ color: 0xff4bd8 });
+  const archMat = new THREE.MeshBasicMaterial({ color: 0x60d0ff, transparent: true, opacity: 0.65 });
+  railMats = { a: pylonMatA, b: pylonMatB, arch: archMat };
+  for (let s = 0; s < 2; s++) {
+    const seg = new THREE.Group();
+    for (let i = 0; i < 10; i++) {
+      const x = i * 26 - 130;
+      for (const side of [-1, 1]) {
+        const py = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 12, 6),
+          i % 2 === 0 ? pylonMatA : pylonMatB);
+        py.rotation.x = Math.PI / 2; // stand upright (z axis)
+        py.position.set(x, side * 30, -2);
+        seg.add(py);
+      }
+    }
+    for (const x of [-65, 65]) { // arches spanning the track
+      const arch = new THREE.Mesh(new THREE.TorusGeometry(26, 0.7, 6, 40), archMat);
+      arch.rotation.y = Math.PI / 2; // ring plane perpendicular to travel
+      arch.position.set(x, 0, -8);
+      seg.add(arch);
+    }
+    seg.position.x = s * 260;
+    railGroup.add(seg);
+    railSegs.push(seg);
+  }
+}
+
 function updateGround(dt) {
   const TILE = 260;
+  const sp = viewMode === 'rail' ? 70 : 24; // rail mode = raw speed
   for (const tile of groundTiles) {
-    tile.position.x -= 24 * dt;
+    tile.position.x -= sp * dt;
     if (tile.position.x < -TILE) tile.position.x += TILE * 2;
   }
+  if (canyonGroup.visible) {
+    for (const w of canyonWalls) {
+      w.position.x -= sp * dt;
+      if (w.position.x < -TILE) w.position.x += TILE * 2;
+    }
+  }
+  if (railGroup.visible) {
+    for (const seg of railSegs) {
+      seg.position.x -= sp * dt;
+      if (seg.position.x < -TILE) seg.position.x += TILE * 2;
+    }
+  }
   for (const c of clouds) {
-    c.position.x -= 40 * dt;
+    c.position.x -= (sp + 16) * dt;
     if (c.position.x < -(play.fw + 60)) {
       c.position.x = play.fw + 60;
       c.position.y = (Math.random() * 2 - 1) * (play.lat + 10);
@@ -234,15 +342,145 @@ function updateGround(dt) {
   }
 }
 
+// mid-stage view switch (the finale dives from overflight into the core):
+// clears the field for a clean transition, repositions the ship, reskins scenery
+function switchView(mode, opts) {
+  const o = opts || {};
+  applyViewMode(mode);
+  if (mode !== 'side') grassMatRef.color.setHex(o.groundColor || 0x2e5c30);
+  canyonGroup.visible = false;
+  railGroup.visible = mode === 'rail';
+  if (railGroup.visible) {
+    railSegs.forEach((s, i) => { s.position.x = i * 260; });
+    const rc = o.railColors || { a: 0x3ee6ff, b: 0xff4bd8, arch: 0x60d0ff };
+    railMats.a.color.setHex(rc.a);
+    railMats.b.color.setHex(rc.b);
+    railMats.arch.color.setHex(rc.arch);
+  }
+  for (const tile of groundTiles)
+    for (const d of tile.userData.deco) d.visible = mode !== 'rail';
+  if (o.fogFar) scene.fog.far = o.fogFar;
+  if (o.fogColor) scene.fog.color.setHex(o.fogColor);
+  for (const p of enemyBullets) release(p);
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    scene.remove(enemies[i].mesh);
+    enemies.splice(i, 1);
+  }
+  player.pos.set(-play.fw + 12, 0, 0);
+  player.invuln = Math.max(player.invuln, 1.5);
+  ship.rotation.set(0, 0, 0);
+  shake = Math.max(shake, 0.6);
+}
+
 function applyViewMode(mode) {
   viewMode = mode;
-  const top = mode === 'top';
-  for (const l of starLayers) l.pts.visible = !top;
-  planet.visible = !top;
-  for (const r of bgRocks) r.visible = !top;
-  groundGroup.visible = top;
-  scene.fog.far = top ? 170 : 220;
+  const space = mode === 'side'; // starfield backdrop only makes sense side-on
+  for (const l of starLayers) l.pts.visible = space;
+  planet.visible = space;
+  for (const r of bgRocks) r.visible = space;
+  groundGroup.visible = !space;
+  scene.fog.far = mode === 'rail' ? 300 : mode === 'top' ? 170 : 220;
+  scene.fog.color.setHex(0x02030a);
   computeView();
+}
+
+// ---------------------------------------------------------------- fleet backdrop (stage 10)
+// enemy capital ships drifting deep in the background of the side view
+const fleetGroup = new THREE.Group();
+fleetGroup.visible = false;
+scene.add(fleetGroup);
+const fleetShips = [];
+{
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x2a2030, metalness: 0.7, roughness: 0.6 });
+  const portMat = new THREE.MeshBasicMaterial({ color: 0xff5050 });
+  for (let i = 0; i < 3; i++) {
+    const s = new THREE.Group();
+    const len = 34 + i * 10;
+    s.add(new THREE.Mesh(new THREE.BoxGeometry(len, 5, 4), hullMat));
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 3), hullMat);
+    tower.position.set(len * 0.25, 4, 0);
+    s.add(tower);
+    const prow = new THREE.Mesh(new THREE.ConeGeometry(2.6, 8, 4), hullMat);
+    prow.rotation.z = Math.PI / 2;
+    prow.position.x = -len / 2 - 4;
+    s.add(prow);
+    for (let p = 0; p < 6; p++) { // running lights
+      const port = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.4, 0.2), portMat);
+      port.position.set(p * (len / 6) - len / 2 + 2, 0.8, 2.1);
+      s.add(port);
+    }
+    s.position.set(i * 60 - 40, i * 14 - 14, -45 - i * 8);
+    s.userData.speed = 2 + i * 0.8;
+    fleetGroup.add(s);
+    fleetShips.push(s);
+  }
+}
+function updateFleet(dt) {
+  for (const s of fleetShips) {
+    s.position.x -= s.userData.speed * dt;
+    if (s.position.x < -view.w * 1.8) s.position.x = view.w * 1.8;
+  }
+}
+
+// allied fire: the Argo's broadside volleys + Zeraa's strafing runs use the
+// player-bullet pool, so they damage enemies and bosses like your own shots
+function argoVolley() {
+  showMsg('ARGO BROADSIDE!', 1.6);
+  audio.radio();
+  for (let i = 0; i < 8; i++) {
+    setTimeout(() => {
+      if (state !== 'playing') return;
+      const b = take(playerBullets);
+      if (!b) return;
+      b.mesh.position.set(-play.fw - 4, (Math.random() * 2 - 1) * (play.lat - 6), 0);
+      b.vel.set(70, 0, 0);
+      b.mesh.rotation.z = Math.PI / 2;
+      b.life = 2.4;
+      audio.shoot();
+    }, i * 110);
+  }
+}
+
+// Zeraa's cameo dart — streaks across the field on a strafing run
+const zeraaDart = new THREE.Group();
+{
+  const silverMat = new THREE.MeshStandardMaterial({ color: 0xd8dce8, metalness: 0.8, roughness: 0.2 });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.9, 5, 8), silverMat);
+  body.rotation.z = -Math.PI / 2; // nose forward (+x)
+  zeraaDart.add(body);
+  const trim = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.22, 6, 18),
+    new THREE.MeshBasicMaterial({ color: 0xff70d8 }));
+  trim.rotation.y = Math.PI / 2;
+  zeraaDart.add(trim);
+  zeraaDart.add(new THREE.PointLight(0xff70d8, 30, 20));
+  zeraaDart.visible = false;
+  scene.add(zeraaDart);
+}
+let zeraaRunT = -1;
+function zeraaRun() {
+  zeraaRunT = 0;
+  zeraaDart.visible = true;
+}
+function updateZeraaRun(dt) {
+  if (zeraaRunT < 0) return;
+  zeraaRunT += dt;
+  const k = zeraaRunT / 2.2; // full crossing in 2.2s
+  zeraaDart.position.set(-play.fw - 8 + k * (play.fw * 2 + 16),
+    10 - k * 6 + Math.sin(zeraaRunT * 6) * 1.5, 0);
+  zeraaDart.rotation.x = Math.sin(zeraaRunT * 6) * 0.4;
+  if (zeraaRunT % 0.12 < dt && state === 'playing') { // strafing as she goes
+    const b = take(playerBullets);
+    if (b) {
+      b.mesh.position.copy(zeraaDart.position).add(new THREE.Vector3(2.8, 0, 0));
+      b.vel.set(95, 0, 0);
+      b.mesh.rotation.z = Math.PI / 2;
+      b.life = 1.4;
+    }
+  }
+  if (k >= 1) {
+    zeraaRunT = -1;
+    zeraaDart.visible = false;
+  }
 }
 
 // ---------------------------------------------------------------- player
@@ -273,6 +511,12 @@ const ship = new THREE.Group();
   const glow = new THREE.PointLight(0x44ccff, 30, 22);
   glow.position.set(-3.2, 0, 0);
   ship.add(glow);
+  // one-hit shield bubble (max-power pickup reward)
+  const shield = new THREE.Mesh(new THREE.SphereGeometry(3.1, 18, 14),
+    new THREE.MeshBasicMaterial({ color: 0x50d8ff, transparent: true, opacity: 0.22, depthWrite: false }));
+  shield.visible = false;
+  ship.add(shield);
+  ship.userData.shield = shield;
   scene.add(ship);
 }
 
@@ -282,6 +526,8 @@ const player = {
   radius: 1.5,
   fireCool: 0,
   weapon: 1,       // 1..3
+  options: 0,      // 0..2 orbital drones that fire with you
+  shield: false,   // absorbs one hit
   lives: 3,
   invuln: 0,
   alive: true,
@@ -292,6 +538,21 @@ const player = {
 // sit below the flight plane but are still shootable / dodgeable)
 function d2(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// orbital option drones (Gradius-style): circle the ship, fire when you fire
+const optionMeshes = [];
+{
+  const optMat = new THREE.MeshStandardMaterial({ color: 0x50e0ff, emissive: 0x1060a0, metalness: 0.5, roughness: 0.3 });
+  for (let i = 0; i < 2; i++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.8), optMat));
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.08, 5, 16),
+      new THREE.MeshBasicMaterial({ color: 0x9af0ff })));
+    g.visible = false;
+    scene.add(g);
+    optionMeshes.push(g);
+  }
 }
 
 // ---------------------------------------------------------------- pools
@@ -312,7 +573,7 @@ function take(pool) {
 function release(p) { p.active = false; p.mesh.visible = false; }
 
 const pBulletMat = new THREE.MeshBasicMaterial({ color: 0x8affff });
-const playerBullets = makePool(70, () => {
+const playerBullets = makePool(110, () => {
   const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 1.6, 3, 8), pBulletMat);
   m.rotation.z = Math.PI / 2;
   return m;
@@ -379,6 +640,15 @@ const astMat = new THREE.MeshStandardMaterial({ color: 0x8a7a68, roughness: 1 })
 const weaverMat = new THREE.MeshStandardMaterial({ color: 0xd040a0, emissive: 0x400a30, metalness: 0.5, roughness: 0.35 });
 const raiderMat = new THREE.MeshStandardMaterial({ color: 0x40e0d0, emissive: 0x0a3830, metalness: 0.6, roughness: 0.3 });
 const tankMat = new THREE.MeshStandardMaterial({ color: 0x4f5a3a, emissive: 0x11140a, metalness: 0.5, roughness: 0.6 });
+const burrowerMat = new THREE.MeshStandardMaterial({ color: 0xb06a28, emissive: 0x2a1404, metalness: 0.5, roughness: 0.5 });
+const moundMat = new THREE.MeshStandardMaterial({ color: 0x5a3a24, roughness: 1, flatShading: true });
+const junkMat = new THREE.MeshStandardMaterial({ color: 0x7a8290, metalness: 0.7, roughness: 0.5 });
+const rustMat = new THREE.MeshStandardMaterial({ color: 0x8a5a30, metalness: 0.4, roughness: 0.8 });
+const phantomBaseMat = new THREE.MeshStandardMaterial({ color: 0xb0c0e8, emissive: 0x203050, metalness: 0.6, roughness: 0.3, transparent: true });
+const eggMat = new THREE.MeshStandardMaterial({ color: 0xc8b060, emissive: 0x584010, metalness: 0.1, roughness: 0.45 });
+const membraneMat = new THREE.MeshStandardMaterial({ color: 0x7a3040, emissive: 0x240a10, roughness: 0.7 });
+const lancerMat = new THREE.MeshStandardMaterial({ color: 0x8890d8, emissive: 0x181c48, metalness: 0.6, roughness: 0.35 });
+const splitterMat = new THREE.MeshStandardMaterial({ color: 0xe8a030, emissive: 0x402808, metalness: 0.5, roughness: 0.4 });
 
 function buildEnemy(type) {
   const g = new THREE.Group();
@@ -462,6 +732,98 @@ function buildEnemy(type) {
     barrel.position.set(-1.6, 0, 0.9);
     g.add(barrel);
     g.userData.turret = dome;
+  } else if (type === 'burrower') {
+    const mound = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6, 0), moundMat);
+    mound.scale.set(1.2, 1.2, 0.45);
+    g.add(mound);
+    g.userData.mound = mound;
+    const body = new THREE.Group();
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.7, 2.2, 7), burrowerMat);
+    tip.rotation.z = Math.PI / 2; // drill nose toward -x
+    tip.position.x = -1.6;
+    body.add(tip);
+    const mid = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 2.2, 7), burrowerMat);
+    mid.rotation.z = Math.PI / 2;
+    mid.position.x = 0.4;
+    body.add(mid);
+    for (const zz of [-0.9, 0.9]) {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.28, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffd040 }));
+      eye.position.set(1.2, 0.4, zz);
+      body.add(eye);
+    }
+    body.visible = false;
+    g.add(body);
+    g.userData.body = body;
+  } else if (type === 'phantom') {
+    const mat = phantomBaseMat.clone(); // per-instance so each can fade alone
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(1.0, 3.4, 4), mat);
+    hull.rotation.z = Math.PI / 2;
+    g.add(hull);
+    for (const zz of [-1.4, 1.4]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.12, 1.4), mat);
+      wing.position.set(0.6, 0, zz);
+      g.add(wing);
+    }
+    g.userData.mat = mat;
+  } else if (type === 'lancer') {
+    const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.1, 4.2, 6), lancerMat);
+    hull.rotation.z = Math.PI / 2;
+    g.add(hull);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0x303860 }); // flashes on telegraph
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.6, 6), tipMat);
+    tip.rotation.z = Math.PI / 2;
+    tip.position.x = -2.8;
+    g.add(tip);
+    g.userData.tipMat = tipMat;
+  } else if (type === 'cruiser') {
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 3), junkMat);
+    g.add(hull);
+    const prow = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3, 4), junkMat);
+    prow.rotation.z = Math.PI / 2;
+    prow.position.x = -5.4;
+    g.add(prow);
+    for (const xx of [-2, 1.5]) {
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8), turretMat);
+      dome.position.set(xx, 1.6, 0);
+      g.add(dome);
+    }
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(2, 1.8, 1.6), turretMat);
+    bridge.position.set(3, 1.8, 0);
+    g.add(bridge);
+  } else if (type === 'egg') {
+    // a clutch of brood eggs — pulses, hatches drones until popped
+    for (const [dx, dy, s] of [[0, 0, 1.5], [-1.2, 1.1, 1.0], [1.1, -1.0, 1.1]]) {
+      const egg = new THREE.Mesh(new THREE.SphereGeometry(s, 10, 8), eggMat);
+      egg.position.set(dx, dy, 0);
+      egg.scale.z = 1.4;
+      g.add(egg);
+    }
+    const base = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 6), membraneMat);
+    base.scale.set(1.1, 1.1, 0.5);
+    base.position.z = -1;
+    g.add(base);
+  } else if (type === 'splitter' || type === 'mini') {
+    const r = type === 'splitter' ? 1.4 : 0.8;
+    g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), splitterMat));
+    if (type === 'splitter') {
+      const seam = new THREE.Mesh(new THREE.TorusGeometry(r + 0.2, 0.1, 5, 18),
+        new THREE.MeshBasicMaterial({ color: 0xffd080 }));
+      g.add(seam);
+    }
+  } else if (type === 'junk') {
+    // tumbling wreck debris: a welded clump of hull plates and pipe
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(
+        1 + Math.random() * 1.6, 0.6 + Math.random() * 1.4, 0.5 + Math.random()),
+        Math.random() < 0.4 ? rustMat : junkMat);
+      b.position.set((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5));
+      b.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      g.add(b);
+    }
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 2.4, 6), junkMat);
+    pipe.rotation.z = Math.random() * 3;
+    g.add(pipe);
   } else if (type === 'ast' || type === 'astS') {
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(type === 'ast' ? 2.2 : 1.0, 0), astMat);
     rock.scale.set(1, 0.75 + Math.random() * 0.5, 0.9);
@@ -483,13 +845,22 @@ const ENEMY_DEFS = {
   weaver:  { hp: 2, radius: 1.6, score: 220 },
   raider:  { hp: 1, radius: 1.5, score: 180 },
   tank:    { hp: 3, radius: 2.0, score: 300 }, // ground unit: shootable, but no ram
+  burrower:{ hp: 2, radius: 1.7, score: 260 }, // underground until it erupts
+  junk:    { hp: 2, radius: 2.0, score: 60 },  // drifting wreck debris
+  phantom: { hp: 2, radius: 1.6, score: 350 }, // cloaks; only vulnerable while visible
+  lancer:  { hp: 3, radius: 1.8, score: 320 }, // paces you, telegraphed burst volleys
+  splitter:{ hp: 2, radius: 1.7, score: 240 }, // splits into two minis on death
+  mini:    { hp: 1, radius: 1.0, score: 60 },
+  egg:     { hp: 3, radius: 2.2, score: 400 }, // hatches drones until popped
+  cruiser: { hp: 14, radius: 3.6, score: 800 }, // rolling broadside walls
 };
 
 function spawnEnemy(type, y, opts) {
   const def = ENEMY_DEFS[type];
   const mesh = buildEnemy(type);
   const o = opts || {};
-  mesh.position.set(o.x !== undefined ? o.x : play.fw + 6, y, type === 'tank' ? -6 : 0);
+  mesh.position.set(o.x !== undefined ? o.x : play.fw + 6, y,
+    type === 'tank' || type === 'burrower' ? -6 : 0);
   scene.add(mesh);
   enemies.push({
     type, mesh, hp: def.hp, radius: def.radius, score: def.score,
@@ -509,6 +880,12 @@ function killEnemy(e, i) {
       spawnEnemy('astS', e.mesh.position.y, {
         x: e.mesh.position.x, vy: vy + (Math.random() - 0.5) * 3,
         sp: 12 + Math.random() * 8,
+      });
+  }
+  if (e.type === 'splitter') {
+    for (const off of [3, -3])
+      spawnEnemy('mini', e.mesh.position.y + off, {
+        x: e.mesh.position.x, phase: Math.random() * 6,
       });
   }
   scene.remove(e.mesh);
@@ -645,6 +1022,126 @@ function updateEnemies(dt) {
         e.fired = true;
         enemyFire(m.position, 26);
       }
+      if (Math.abs(m.position.y) > play.lat + 8) {
+        scene.remove(m);
+        enemies.splice(i, 1);
+        continue;
+      }
+    } else if (e.type === 'burrower') {
+      if (e.buried === undefined) { e.buried = true; e.fuse = 1.8 + Math.random() * 0.6; }
+      if (e.buried) {
+        m.position.x -= 20 * dt; // mound carried along with the ground scroll
+        const s = 1 + Math.sin(e.t * 10) * 0.12;
+        m.userData.mound.scale.set(1.2 * s, 1.2 * s, 0.45);
+        if (e.t >= e.fuse) {
+          e.buried = false;
+          m.userData.mound.visible = false;
+          m.userData.body.visible = true;
+          const at = new THREE.Vector3(m.position.x, m.position.y, 0);
+          burst(at, 10, 12, 0.9);
+          for (let k = 0; k < 6; k++) enemyFireAngle(at, k / 6 * Math.PI * 2, 14);
+          audio.explode();
+        }
+      } else {
+        m.position.z = Math.min(0, m.position.z + 16 * dt); // claw up to flight level
+        m.position.x -= 16 * dt;
+        m.position.y = e.baseY + Math.sin(e.t * 2.2) * 3;
+        m.userData.body.rotation.x += 9 * dt; // drill spin
+        e.fireCool -= dt;
+        if (e.fireCool <= 0 && player.alive) {
+          enemyFire(m.position, 23);
+          e.fireCool = 3;
+        }
+      }
+    } else if (e.type === 'phantom') {
+      // cycle: visible -> fade -> cloaked hunt -> reappear with a spread
+      e.ph = e.ph ?? 0; // 0 visible, 1 fading, 2 cloaked, 3 appearing
+      e.phT = (e.phT ?? 2) - dt;
+      const mat = m.userData.mat;
+      if (e.ph === 0) {
+        m.position.x -= 14 * dt;
+        m.position.y = e.baseY + Math.sin(e.t * 1.8) * 4;
+        if (e.phT <= 0) { e.ph = 1; e.phT = 0.7; }
+      } else if (e.ph === 1) {
+        mat.opacity = Math.max(0.08, e.phT / 0.7);
+        m.position.x -= 14 * dt;
+        if (e.phT <= 0) { e.ph = 2; e.phT = 1.6; e.cloaked = true; }
+      } else if (e.ph === 2) {
+        m.position.x -= 22 * dt; // hunts your lane while cloaked
+        m.position.y += THREE.MathUtils.clamp(player.pos.y - m.position.y, -1, 1) * 10 * dt;
+        e.baseY = m.position.y;
+        if (e.phT <= 0) { e.ph = 3; e.phT = 0.5; }
+      } else {
+        mat.opacity = Math.min(1, 1 - e.phT / 0.5);
+        if (e.phT <= 0) {
+          e.ph = 0; e.phT = 2; e.cloaked = false;
+          mat.opacity = 1;
+          if (player.alive && m.position.x < play.fw - 4) {
+            enemyFire(m.position, 24, 0);
+            enemyFire(m.position, 24, 0.25);
+            enemyFire(m.position, 24, -0.25);
+          }
+        }
+      }
+    } else if (e.type === 'lancer') {
+      const holdX = -play.fw + 50; // paces ahead of you (rail: rides your speed)
+      if (!e.leaving && m.position.x > holdX) m.position.x -= 20 * dt;
+      else if (!e.leaving) {
+        m.position.y = e.baseY + Math.sin(e.t * 1.2) * 5;
+        e.volley = e.volley ?? 0;
+        e.fireCool -= dt;
+        if (e.fireCool <= 0 && player.alive) {
+          if (!e.tele) { // telegraph: tip glows before the lance
+            e.tele = true;
+            m.userData.tipMat.color.setHex(0xffffff);
+            e.fireCool = 0.55;
+          } else {
+            e.tele = false;
+            m.userData.tipMat.color.setHex(0x303860);
+            for (let k = 0; k < 3; k++)
+              setTimeout(() => { if (state === 'playing' && player.alive) enemyFire(m.position, 36); }, k * 90);
+            e.volley++;
+            e.fireCool = 2.2;
+            if (e.volley >= 3) e.leaving = true;
+          }
+        }
+      } else m.position.x -= 32 * dt; // done: punches past you
+    } else if (e.type === 'cruiser') {
+      m.position.x -= 6.5 * dt;
+      m.position.y = e.baseY + Math.sin(e.t * 0.8) * 1.5;
+      e.fireCool -= dt;
+      if (e.fireCool <= 0 && m.position.x < play.fw - 6 && player.alive) {
+        for (const dy of [-8, -4, 0, 4, 8]) // broadside wall
+          enemyFireAngle(new THREE.Vector3(m.position.x - 4, m.position.y + dy, 0), Math.PI, 22);
+        enemyFire(m.position, 24);
+        audio.enemyShoot();
+        e.fireCool = 4;
+      }
+    } else if (e.type === 'egg') {
+      m.position.x -= 12 * dt; // rides the hive wall toward you
+      const pulse = 1 + Math.sin(e.t * 5) * 0.08;
+      m.scale.set(pulse, pulse, pulse);
+      e.spawnT = (e.spawnT ?? 2) - dt;
+      if (e.spawnT <= 0 && m.position.x < play.fw - 6 && enemies.length < 40 && player.alive) {
+        spawnEnemy('drone', m.position.y + (Math.random() - 0.5) * 4,
+          { x: m.position.x - 2, amp: 3, phase: Math.random() * 6 });
+        burst(m.position, 4, 6, 0.6);
+        e.spawnT = 2.5;
+      }
+    } else if (e.type === 'splitter') {
+      m.position.x -= 17 * dt;
+      m.position.y = e.baseY + Math.sin(e.t * 2.4 + (e.phase || 0)) * 5;
+      m.rotation.x += 3 * dt;
+      m.rotation.y += 2 * dt;
+    } else if (e.type === 'mini') {
+      m.position.x -= 34 * dt;
+      m.position.y = e.baseY + Math.sin(e.t * 6 + (e.phase || 0)) * 3;
+      m.rotation.x += 8 * dt;
+    } else if (e.type === 'junk') {
+      m.position.x -= (e.sp || 12) * dt;
+      m.position.y += (e.vy || 0) * dt;
+      m.rotation.x += 1.1 * dt;
+      m.rotation.z += 0.8 * dt;
       if (Math.abs(m.position.y) > play.lat + 8) {
         scene.remove(m);
         enemies.splice(i, 1);
@@ -887,6 +1384,1070 @@ function makeHarvester() {
   };
 }
 
+// stage 5 boss: a burrowing drill-worm that cycles under and above the sand
+function makeDrillmaw() {
+  const drillMat = new THREE.MeshStandardMaterial({ color: 0xc0b8a8, metalness: 0.8, roughness: 0.35 });
+  const fleshMat = new THREE.MeshStandardMaterial({ color: 0x8a4a68, emissive: 0x200a14, metalness: 0.4, roughness: 0.5 });
+  const finMat = new THREE.MeshStandardMaterial({ color: 0xffb060, emissive: 0x402008 });
+
+  const head = new THREE.Group();
+  const spinner = new THREE.Group(); // the drill bit spins around its own axis
+  for (const [r, len, xx] of [[1.3, 3, -3.6], [2.0, 2.6, -1.2], [2.5, 3, 1.4]]) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, len, 7), drillMat);
+    cone.rotation.z = Math.PI / 2; // nose toward -x
+    cone.position.x = xx;
+    spinner.add(cone);
+  }
+  head.add(spinner);
+  head.userData.spinner = spinner;
+  for (const zz of [-1.6, 1.6]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffd040 }));
+    eye.position.set(2.2, 0.8, zz);
+    head.add(eye);
+  }
+  head.add(new THREE.PointLight(0xffa060, 40, 30));
+  head.position.set(play.fw * 0.5, 0, -9);
+  head.visible = false;
+  scene.add(head);
+
+  const segs = [], segR = [];
+  for (let i = 0; i < 5; i++) {
+    const s = new THREE.Group();
+    const r = 2.2 - i * 0.25;
+    s.add(new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), fleshMat));
+    if (i % 2 === 0) s.add(new THREE.Mesh(new THREE.TorusGeometry(r + 0.4, 0.16, 6, 16), finMat));
+    s.position.copy(head.position);
+    s.visible = false;
+    scene.add(s);
+    segs.push(s);
+    segR.push(r + 0.3);
+  }
+
+  const mound = new THREE.Mesh(new THREE.DodecahedronGeometry(3.2, 0), moundMat);
+  mound.scale.set(1.3, 1.3, 0.4);
+  mound.position.set(play.fw + 10, 0, -6.5);
+  scene.add(mound);
+
+  return {
+    kind: 'drillmaw', mesh: head, segs, segR, mound, extras: [mound],
+    trail: [head.position.clone()],
+    hp: 320, maxHp: 320, bounty: 22000, radius: 3.2,
+    t: 0, entered: true, dying: 0,
+    state: 'buried', stateT: 4, prev: head.position.clone(),
+    cool: { aim: 2, fan: 3.5 },
+  };
+}
+
+// stage 6 boss: a golem welded out of wrecks — knock it apart and it rebuilds itself once
+function makeColossus() {
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0xffa020, emissive: 0xa04808, metalness: 0.3, roughness: 0.25 });
+  const g = new THREE.Group();
+
+  const addPart = (mesh, x, y, z) => {
+    mesh.position.set(x, y, z);
+    g.add(mesh);
+    return mesh;
+  };
+  // torso: welded hull plates
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(6.5, 8.5, 4.5), junkMat), 0.5, 0, 0);
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(4, 3.5, 3), rustMat), -2.5, 3.2, 0.8);
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(3.5, 4, 2.6), rustMat), 2.8, -3.4, -0.6);
+  addPart(new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 5, 7), junkMat), -1, -4.5, 1);
+  // head with one angry eye
+  addPart(new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.8, 2.8), junkMat), -0.5, 6.4, 0);
+  const eye = addPart(new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff3020 })), -1.8, 6.4, 0);
+  // exposed reactor core — the weak point
+  const core = addPart(new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 1), coreMat), -3.6, 0, 0.5);
+  g.add(new THREE.PointLight(0xffa020, 60, 40));
+  // orbiting fist flails (positioned procedurally each frame)
+  const fists = [];
+  for (let i = 0; i < 2; i++) {
+    const fist = addPart(new THREE.Mesh(new THREE.DodecahedronGeometry(2, 0), junkMat), 0, 9, 0);
+    const chain = addPart(new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 0.8), rustMat), 0, 4.5, 0);
+    fists.push({ fist, chain });
+  }
+
+  // every solid part remembers home so the golem can fall apart and rebuild
+  const parts = [];
+  for (const c of g.children) {
+    if (!c.isMesh) continue;
+    parts.push({
+      mesh: c, home: c.position.clone(),
+      vel: new THREE.Vector3((Math.random() - 0.5) * 24, (Math.random() - 0.5) * 24, (Math.random() - 0.5) * 12),
+      spin: (Math.random() - 0.5) * 8,
+    });
+  }
+
+  g.position.set(play.fw + 24, 0, 0);
+  scene.add(g);
+  return {
+    kind: 'colossus', mesh: g, core, eye, fists, parts,
+    hp: 300, reserve: 200, maxHp: 300, totalMax: 500, bounty: 24000,
+    radius: 6.2, t: 0, entered: false, dying: 0,
+    cState: 'fight', cT: 0, enraged: false,
+    cool: { throw: 2.4, fan: 3.6, ring: 3.2, homing: 3.5 },
+  };
+}
+
+function colossusCollapse() {
+  const b = boss;
+  b.cState = 'collapsed';
+  b.cT = 2.6;
+  burst(b.mesh.position, 40, 26, 1.8);
+  audio.bigExplode();
+  shake = 1.2;
+  for (const p of b.parts) { // re-roll scatter velocities
+    p.vel.set((Math.random() - 0.5) * 26, (Math.random() - 0.5) * 26, (Math.random() - 0.5) * 12);
+    p.spin = (Math.random() - 0.5) * 8;
+  }
+  say('kamus', "Oh come ON. It's putting itself back together?!", 'k_scrap', 2.5);
+}
+
+// stage 7 boss: Zeraa's personal warship, racing you down the conduit
+function makeSiren() {
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0xd8dce8, metalness: 0.8, roughness: 0.2, transparent: true });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0xff70d8, emissive: 0x60204a, metalness: 0.5, roughness: 0.3, transparent: true });
+
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.ConeGeometry(2.2, 11, 8), hullMat);
+  body.rotation.z = Math.PI / 2; // nose toward the player
+  g.add(body);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 10), trimMat);
+  canopy.position.set(1.5, 1.2, 0);
+  canopy.scale.set(1.6, 0.8, 0.9);
+  g.add(canopy);
+  for (const zz of [-1, 1]) { // swept crescent wings
+    const wing = new THREE.Mesh(new THREE.TorusGeometry(4, 0.5, 6, 22, Math.PI), trimMat);
+    wing.rotation.x = zz * Math.PI / 2.4;
+    wing.position.set(2, 0, zz * 2.4);
+    g.add(wing);
+  }
+  const veil = new THREE.Mesh(new THREE.SphereGeometry(6.4, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xff90e0, transparent: true, opacity: 0, depthWrite: false }));
+  g.add(veil);
+  g.add(new THREE.PointLight(0xff70d8, 60, 40));
+  g.position.set(play.fw + 24, 0, 0);
+  scene.add(g);
+
+  return {
+    kind: 'siren', mesh: g, veilMesh: veil, mats: [hullMat, trimMat],
+    hp: 380, maxHp: 380, bounty: 26000,
+    radius: 4.4, t: 0, entered: false, dying: 0,
+    veiled: false, veilT: 9, spiralA: 0, spiralT: 0,
+    cool: { aim: 2.2, fan: 3.6, spawn: 7 },
+  };
+}
+
+// stage 8 boss: a Gorgon replica of the SF-01 built from Zeraa's surveillance
+// files — it shadows your movement on a delay and returns your own fire
+function makeMirror() {
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0x3a4048, metalness: 0.7, roughness: 0.3, transparent: true });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x1d5a3e, emissive: 0x0a3020, metalness: 0.5, roughness: 0.4, transparent: true });
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.ConeGeometry(1.3, 6.4, 10), hullMat);
+  body.rotation.z = Math.PI / 2; // nose toward the player — your dark reflection
+  g.add(body);
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 10),
+    new THREE.MeshStandardMaterial({ color: 0xff3030, emissive: 0x800a0a, metalness: 0.2, roughness: 0.1, transparent: true }));
+  canopy.position.set(-0.6, 0.6, 0);
+  canopy.scale.set(1.5, 0.8, 0.8);
+  g.add(canopy);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.18, 4), accentMat);
+  wing.position.set(1.3, -0.1, 0);
+  g.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.8, 0.16), accentMat);
+  tail.position.set(2.2, 0.8, 0);
+  g.add(tail);
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.65, 2.8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff5050, transparent: true }));
+  flame.rotation.z = -Math.PI / 2;
+  flame.position.set(4, 0, 0);
+  g.add(flame);
+  g.add(new THREE.PointLight(0xff4040, 40, 30));
+  g.position.set(play.fw + 20, 0, 0);
+  scene.add(g);
+  const mats = [];
+  g.traverse((c) => { if (c.isMesh) mats.push(c.material); });
+
+  return {
+    kind: 'mirror', mesh: g, mats, flame,
+    hp: 360, maxHp: 360, bounty: 26000,
+    radius: 2.8, t: 0, entered: false, dying: 0,
+    hist: [], fireQ: [], prevFC: 0, mirrorCount: 0,
+    cloaked: false, cloakT: 6,
+    cool: { base: 3, spawn: 8 },
+  };
+}
+
+function updateMirror(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.flame.scale.y = 0.8 + Math.random() * 0.5;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (!b.saidWatch) {
+      b.saidWatch = true;
+      say('zeraa', 'They built it from MY files on you, darling. For what it is worth... the original is better.', 'z_watch', 3.5);
+    }
+    if (Math.random() < 0.4) {
+      burst(m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 3)), 10, 18, 1);
+      audio.explode();
+      shake = Math.max(shake, 0.5);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 50, 28, 1.8);
+      audio.bigExplode();
+      shake = 1.4;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 14 * dt;
+    if (m.position.x <= play.fw - 14) {
+      b.entered = true;
+      say('kamus', "It flies like me... banks like me... Gorgon, you built a KNOCKOFF?! Now I'm insulted.", 'k_boss8');
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+  const delay = phase === 1 ? 1.2 : phase === 2 ? 0.8 : 0.5;
+
+  // record your movement and echo it back after the delay
+  b.hist.push({ t: b.t, y: player.pos.y });
+  while (b.hist.length > 2 && b.hist[0].t < b.t - 2) b.hist.shift();
+  let echoY = 0;
+  for (let i = b.hist.length - 1; i >= 0; i--) {
+    if (b.hist[i].t <= b.t - delay) { echoY = b.hist[i].y; break; }
+  }
+  m.position.x = play.fw - 14 + Math.sin(b.t * 0.6) * 3;
+  m.position.y = THREE.MathUtils.lerp(m.position.y,
+    THREE.MathUtils.clamp(echoY, -(play.lat - 6), play.lat - 6), Math.min(1, 8 * dt));
+  m.rotation.x = THREE.MathUtils.lerp(m.rotation.x, ship.rotation.x * -1, 6 * dt); // mirrored bank
+
+  // cloak flicker (phase 2+)
+  if (phase >= 2) {
+    b.cloakT -= dt;
+    if (!b.cloaked && b.cloakT <= 0) { b.cloaked = true; b.cloakT = 1.5; audio.radio(); }
+    else if (b.cloaked && b.cloakT <= 0) { b.cloaked = false; b.cloakT = phase === 3 ? 4 : 6; }
+  }
+  const fade = b.cloaked ? 0.1 : 1;
+  for (const mat of b.mats) mat.opacity += (fade - mat.opacity) * Math.min(1, 6 * dt);
+
+  if (!player.alive) return;
+
+  // your own shots, returned with interest
+  if (player.fireCool > b.prevFC + 0.05) b.fireQ.push(b.t);
+  b.prevFC = player.fireCool;
+  while (b.fireQ.length && b.fireQ[0] <= b.t - delay) {
+    b.fireQ.shift();
+    b.mirrorCount++;
+    const every = phase === 1 ? 3 : 2;
+    if (b.mirrorCount % every === 0 && !b.cloaked) {
+      if (phase >= 2) {
+        enemyFire(m.position, 30, 0);
+        enemyFire(m.position, 30, 0.18);
+        enemyFire(m.position, 30, -0.18);
+      } else enemyFire(m.position, 30);
+    }
+  }
+  // baseline volley so a pacifist run can't stall it out
+  b.cool.base -= dt;
+  if (b.cool.base <= 0 && !b.cloaked) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'mirror' && !boss.dying && !boss.cloaked && player.alive)
+          enemyFire(boss.mesh.position, 28);
+      }, k * 130);
+    b.cool.base = phase === 1 ? 4 : phase === 2 ? 3 : 2.2;
+  }
+  if (phase >= 2) {
+    b.cool.spawn -= dt;
+    if (b.cool.spawn <= 0) {
+      spawnEnemy(phase === 3 ? 'splitter' : 'phantom', (Math.random() * 2 - 1) * (play.lat - 8));
+      b.cool.spawn = phase === 3 ? 5.5 : 8;
+    }
+  }
+}
+
+// stage 9 boss: the BROOD QUEEN — mother of the entire swarm, racing you
+// down her own hive throat, laying live clutches as she goes
+function makeQueen() {
+  const chitinMat = new THREE.MeshStandardMaterial({ color: 0x4a2a3a, emissive: 0x140810, metalness: 0.5, roughness: 0.4 });
+  const sacMat = new THREE.MeshStandardMaterial({ color: 0xe0b050, emissive: 0x6a4210, metalness: 0.1, roughness: 0.4 });
+
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(new THREE.SphereGeometry(3, 14, 12), chitinMat);
+  head.scale.set(1.2, 1, 1);
+  g.add(head);
+  for (const zz of [-1.2, 1.2]) { // mandibles
+    const mand = new THREE.Mesh(new THREE.ConeGeometry(0.7, 3.6, 6), chitinMat);
+    mand.rotation.z = Math.PI / 2 + zz * 0.25;
+    mand.position.set(-3, zz * 0.4, zz * 1.6);
+    g.add(mand);
+  }
+  for (const [yy, zz] of [[1.2, -1], [1.2, 1], [1.7, -0.4], [1.7, 0.4]]) { // eyes
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x80ff40 }));
+    eye.position.set(-2, yy, zz);
+    g.add(eye);
+  }
+  const thorax = new THREE.Mesh(new THREE.SphereGeometry(2.6, 12, 10), chitinMat);
+  thorax.position.x = 3.5;
+  g.add(thorax);
+  const sac = new THREE.Mesh(new THREE.SphereGeometry(4, 14, 12), sacMat); // the weak point
+  sac.position.x = 8;
+  sac.scale.set(1.3, 0.95, 0.95);
+  g.add(sac);
+  for (let i = 0; i < 6; i++) { // legs
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.15, 4.5, 5), chitinMat);
+    leg.position.set(i * 1.6 - 1, (i % 2 === 0 ? 1 : -1) * 2.6, -1);
+    leg.rotation.x = (i % 2 === 0 ? 1 : -1) * 0.8;
+    g.add(leg);
+  }
+  g.add(new THREE.PointLight(0xc0ff60, 50, 40));
+  g.position.set(play.fw + 26, 0, 0);
+  scene.add(g);
+
+  return {
+    kind: 'queen', mesh: g, sac, sacMat,
+    hp: 400, maxHp: 400, bounty: 30000,
+    radius: 3.6, sacOff: 8, sacR: 4.4,
+    t: 0, entered: false, dying: 0,
+    dashT: 9, dashPhase: 'idle', dashClock: 0, dashX: 0,
+    cool: { spit: 2.4, brood: 6, clutch: 9, ring: 3.4 },
+  };
+}
+
+function updateQueen(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.sac.scale.setScalar(1 + Math.sin(b.t * 4) * 0.05);
+  b.sac.scale.x *= 1.3;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (Math.random() < 0.45) {
+      burst(m.position.clone().add(new THREE.Vector3(
+        Math.random() * 12 - 4, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 4)), 12, 20, 1.3);
+      audio.explode();
+      shake = Math.max(shake, 0.6);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 70, 32, 2.2);
+      audio.bigExplode();
+      shake = 1.6;
+      // the swarm dies with its mother: clear every hatchling on screen
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        burst(enemies[i].mesh.position, 6, 10, 0.8);
+        scene.remove(enemies[i].mesh);
+        enemies.splice(i, 1);
+      }
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 14 * dt;
+    if (m.position.x <= -play.fw + 58) {
+      b.entered = true;
+      say('kamus', "THAT'S the queen?! She's the size of a cruiser... Okay. Aim for the squishy part.", 'k_boss9');
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+
+  // lunge cycle (phase 3): she snaps back at you down the tunnel
+  if (phase >= 3) {
+    if (b.dashPhase === 'idle') {
+      b.dashT -= dt;
+      if (b.dashT <= 0) {
+        b.dashPhase = 'tele';
+        b.dashClock = 0.6;
+        b.sacMat.emissive.setHex(0xffffff);
+        audio.hit();
+      }
+    } else if (b.dashPhase === 'tele') {
+      b.dashClock -= dt;
+      if (b.dashClock <= 0) {
+        b.dashPhase = 'lunge';
+        b.dashClock = 0.5;
+        b.sacMat.emissive.setHex(0x6a4210);
+      }
+    } else if (b.dashPhase === 'lunge') {
+      b.dashClock -= dt;
+      b.dashX = Math.max(b.dashX - 46 * dt, -(play.fw * 2 - 34));
+      if (b.dashClock <= 0) b.dashPhase = 'return';
+    } else {
+      b.dashX += 18 * dt;
+      if (b.dashX >= 0) { b.dashX = 0; b.dashPhase = 'idle'; b.dashT = 6; }
+    }
+  }
+  const sp = phase === 1 ? 1 : phase === 2 ? 1.25 : 1.5;
+  m.position.x = -play.fw + 58 + Math.sin(b.t * 0.45) * 4 + b.dashX;
+  m.position.y = Math.sin(b.t * 0.7 * sp) * (play.lat - 9);
+  m.rotation.x = Math.cos(b.t * 0.7 * sp) * 0.2;
+
+  if (!player.alive) return;
+
+  b.cool.spit -= dt; // acid spit, aimed
+  if (b.cool.spit <= 0) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'queen' && !boss.dying && player.alive)
+          enemyFire(boss.mesh.position, 27);
+      }, k * 140);
+    b.cool.spit = phase === 1 ? 2.5 : phase === 2 ? 1.9 : 1.4;
+  }
+  b.cool.brood -= dt; // live hatchlings
+  if (b.cool.brood <= 0 && enemies.length < 40) {
+    for (const off of [4, -4])
+      spawnEnemy(phase === 3 ? 'splitter' : 'drone', m.position.y + off,
+        { x: m.position.x - 4, amp: 3 });
+    b.cool.brood = phase === 1 ? 6.5 : 5;
+  }
+  b.cool.clutch -= dt; // lays a live clutch into the tunnel — priority target
+  if (b.cool.clutch <= 0 && enemies.length < 38) {
+    spawnEnemy('egg', THREE.MathUtils.clamp(m.position.y, -(play.lat - 6), play.lat - 6),
+      { x: m.position.x - 9 });
+    audio.enemyShoot();
+    b.cool.clutch = phase === 3 ? 8 : 10;
+  }
+  if (phase >= 2) {
+    b.cool.ring -= dt; // spore burst
+    if (b.cool.ring <= 0) {
+      const off = Math.random() * Math.PI;
+      const n = phase === 3 ? 14 : 11;
+      for (let k = 0; k < n; k++)
+        enemyFireAngle(m.position, off + k / n * Math.PI * 2, 15);
+      audio.enemyShoot();
+      b.cool.ring = 3.4;
+    }
+  }
+}
+
+// stage 10 boss: the CHROME FANG — Vex's flagship, a cathedral with engines
+function makeChromeFang() {
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0x9aa0ac, metalness: 0.9, roughness: 0.25 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x201826, metalness: 0.7, roughness: 0.5 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x5a2080, emissive: 0x1c0a2a, metalness: 0.6, roughness: 0.4 });
+
+  const g = new THREE.Group();
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(16, 5, 5), darkMat);
+  g.add(hull);
+  const fang = new THREE.Mesh(new THREE.ConeGeometry(2.6, 10, 4), chromeMat); // the namesake prow
+  fang.rotation.z = Math.PI / 2;
+  fang.rotation.y = Math.PI / 4;
+  fang.position.x = -12;
+  g.add(fang);
+  for (const yy of [-3.4, 3.4]) { // cape-like fins
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(10, 3, 0.6), trimMat);
+    fin.position.set(3, yy, 0);
+    fin.rotation.z = yy > 0 ? -0.25 : 0.25;
+    g.add(fin);
+  }
+  // the bridge tower — Vex's throne sits here (weak point)
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 3), chromeMat);
+  bridge.position.set(4, 4.4, 0);
+  g.add(bridge);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.9, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+  eye.position.set(1.8, 4.4, 0);
+  g.add(eye);
+  for (const yy of [-1.6, 1.6]) { // engines
+    const fl = new THREE.Mesh(new THREE.ConeGeometry(1.1, 4, 8),
+      new THREE.MeshBasicMaterial({ color: 0xb060ff }));
+    fl.rotation.z = -Math.PI / 2;
+    fl.position.set(9.5, yy, 0);
+    g.add(fl);
+  }
+  g.add(new THREE.PointLight(0xb060ff, 60, 45));
+  g.position.set(play.fw + 26, 0, 0);
+  scene.add(g);
+
+  return {
+    kind: 'chromefang', mesh: g, eye,
+    hp: 450, maxHp: 450, bounty: 32000,
+    radius: 7, bridgeOff: new THREE.Vector3(4, 4.4, 0), bridgeR: 3.2,
+    t: 0, entered: false, dying: 0, zeraaTurn: false,
+    gapPhase: Math.random() * Math.PI * 2,
+    dashT: 8, dashPhase: 'idle', dashClock: 0, dashX: 0,
+    cool: { wall: 4, aim: 2.4, fan: 3.6, launch: 7, spiral: 0 },
+    spiralA: 0,
+  };
+}
+
+function updateChromeFang(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (!b.saidFlee) {
+      b.saidFlee = true;
+      say('vex', 'This ship... was only ONE of my bodies, little pilot. Come to the palace. Come and MEET the rest.', 'v_flee', 4);
+    }
+    if (Math.random() < 0.45) {
+      burst(m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 6)), 14, 22, 1.5);
+      audio.explode();
+      shake = Math.max(shake, 0.7);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 80, 34, 2.4);
+      audio.bigExplode();
+      shake = 1.7;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 11 * dt;
+    if (m.position.x <= play.fw - 17) {
+      b.entered = true;
+      say('vex', 'Alone at last, little pilot. No fleet, no home, no siren song to save you. Only the Fang.', 'v_boss10', 4);
+      say('kamus', "That's not a ship, that's a cathedral with engines. Fine. Big things make big targets.", 'k_boss10', 3);
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+
+  // at half health, Zeraa picks her side — in front of everyone
+  if (!b.zeraaTurn && b.hp <= b.maxHp * 0.5) {
+    b.zeraaTurn = true;
+    zeraaRun();
+    b.hp -= 30;
+    updateBossBar();
+    burst(m.position.clone().add(new THREE.Vector3(-6, 2, 0)), 24, 22, 1.5);
+    audio.explode();
+    say('vex', 'ZERAA?! You dare turn that ship against ME?! TRAITOR!', 'v_shock', 3);
+    say('zeraa', 'I told you, darling — I chose the wrong side. Consider this my resignation.', 'z_side', 3.5);
+  }
+
+  // dash ram (phase 3)
+  if (phase >= 3) {
+    if (b.dashPhase === 'idle') {
+      b.dashT -= dt;
+      if (b.dashT <= 0) { b.dashPhase = 'tele'; b.dashClock = 0.7; b.eye.material.color.setHex(0xffffff); audio.hit(); }
+    } else if (b.dashPhase === 'tele') {
+      b.dashClock -= dt;
+      if (b.dashClock <= 0) { b.dashPhase = 'lunge'; b.dashClock = 0.6; b.eye.material.color.setHex(0xff2020); }
+    } else if (b.dashPhase === 'lunge') {
+      b.dashClock -= dt;
+      b.dashX = Math.max(b.dashX - 44 * dt, -play.fw * 1.1);
+      if (b.dashClock <= 0) b.dashPhase = 'return';
+    } else {
+      b.dashX += 16 * dt;
+      if (b.dashX >= 0) { b.dashX = 0; b.dashPhase = 'idle'; b.dashT = 6; }
+    }
+  }
+  m.position.x = play.fw - 17 + Math.sin(b.t * 0.4) * 2.5 + b.dashX;
+  m.position.y = Math.sin(b.t * 0.55 * (phase === 3 ? 1.4 : 1)) * (play.lat - 13);
+
+  if (!player.alive) return;
+
+  b.cool.wall -= dt; // the rolling broadside: a wall with a moving gap
+  if (b.cool.wall <= 0) {
+    b.gapPhase += 1.1;
+    const gapY = Math.sin(b.gapPhase) * (play.lat - 9);
+    for (let y = -play.lat + 3; y <= play.lat - 3; y += 3.6) {
+      if (Math.abs(y - gapY) < 5.2) continue; // the way through
+      enemyFireAngle(new THREE.Vector3(m.position.x - 10, y, 0), Math.PI, 20);
+    }
+    audio.enemyShoot();
+    b.cool.wall = phase === 1 ? 4.4 : phase === 2 ? 3.6 : 3;
+  }
+  b.cool.aim -= dt;
+  if (b.cool.aim <= 0) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'chromefang' && !boss.dying && player.alive)
+          enemyFire(boss.mesh.position.clone().add(boss.bridgeOff), 28);
+      }, k * 130);
+    b.cool.aim = phase === 1 ? 2.6 : 2;
+  }
+  if (phase >= 2) {
+    b.cool.fan -= dt;
+    if (b.cool.fan <= 0) {
+      for (let k = -2; k <= 2; k++) enemyFire(m.position, 23, k * 0.22);
+      b.cool.fan = 3.4;
+    }
+    b.cool.launch -= dt;
+    if (b.cool.launch <= 0 && enemies.length < 30) { // scrambles interceptors
+      raiders(2);
+      b.cool.launch = 8;
+    }
+  }
+  if (phase >= 3) {
+    b.cool.spiral += dt;
+    while (b.cool.spiral >= 0.14) {
+      b.cool.spiral -= 0.14;
+      enemyFireAngle(m.position, b.spiralA, 17);
+      enemyFireAngle(m.position, -b.spiralA + Math.PI, 17);
+      b.spiralA += 0.48;
+    }
+  }
+}
+
+// stage 11 boss: the SERPENT THRONE — Vex's walking throne-mech, stomping the
+// palace grounds. Alternates ranged stance (exposed) and charge stance (shielded)
+function makeThrone() {
+  const obsidianMat = new THREE.MeshStandardMaterial({ color: 0x16101e, metalness: 0.8, roughness: 0.35 });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.9, roughness: 0.2 });
+  const snakeMat = new THREE.MeshStandardMaterial({ color: 0x5a2080, emissive: 0x1c0a2a, metalness: 0.6, roughness: 0.4 });
+
+  const g = new THREE.Group();
+  // four stomping legs
+  const legs = [];
+  for (const [yy, xx] of [[-4, -3], [4, -3], [-4, 3], [4, 3]]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 1.2, 7, 6), obsidianMat);
+    leg.rotation.x = Math.PI / 2;
+    leg.position.set(xx, yy, -2);
+    g.add(leg);
+    legs.push(leg);
+  }
+  const dais = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 6.5, 2, 8), obsidianMat);
+  dais.rotation.x = Math.PI / 2;
+  g.add(dais);
+  // coiled serpent armrests
+  for (const yy of [-3.4, 3.4]) {
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(2, 0.5, 6, 18, Math.PI * 1.5), snakeMat);
+    coil.position.set(0, yy, 1.6);
+    g.add(coil);
+  }
+  const throne = new THREE.Mesh(new THREE.BoxGeometry(3.4, 4.2, 4.6), obsidianMat);
+  throne.position.set(1.6, 0, 3);
+  g.add(throne);
+  // Vex himself on the throne — the weak point
+  const vexBody = new THREE.Mesh(new THREE.ConeGeometry(1.1, 2.6, 6), snakeMat);
+  vexBody.position.set(-0.6, 0, 3.4);
+  vexBody.rotation.x = Math.PI / 2;
+  g.add(vexBody);
+  const vexHead = new THREE.Mesh(new THREE.SphereGeometry(0.8, 10, 8), chromeMat);
+  vexHead.position.set(-0.6, 0, 4.9);
+  g.add(vexHead);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+  eye.position.set(-1.3, 0, 4.9);
+  g.add(eye);
+  // charge-stance shield dome
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(8.4, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0xb060ff, transparent: true, opacity: 0, depthWrite: false }));
+  g.add(dome);
+  g.add(new THREE.PointLight(0xb060ff, 60, 45));
+  g.position.set(play.fw + 26, 0, -3);
+  scene.add(g);
+
+  return {
+    kind: 'throne', mesh: g, legs, dome, eye,
+    hp: 500, maxHp: 500, bounty: 36000,
+    radius: 7, vexOff: new THREE.Vector3(-0.6, 0, 0), vexR: 3,
+    t: 0, entered: false, dying: 0,
+    stance: 'ranged', stanceT: 8, baseX: 0, chargeX: 0,
+    gapPhase: Math.random() * Math.PI * 2, spiralA: 0, spiralT: 0,
+    cool: { wall: 4.2, aim: 2.4, homing: 3.4, spawn: 7, ring: 1.2 },
+  };
+}
+
+function updateThrone(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.legs.forEach((leg, i) => { // stomping gait
+    leg.position.z = -2 + Math.max(0, Math.sin(b.t * 5 + i * Math.PI / 2)) * 0.9;
+  });
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (!b.saidDefeat) {
+      b.saidDefeat = true;
+      say('vex', 'A chair... it was only a CHAIR. The Gorgon core waits for me, little pilot. Come — and watch me become ETERNAL.', 'v_defeat', 4.5);
+    }
+    if (Math.random() < 0.45) {
+      burst(m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, Math.random() * 6)), 14, 22, 1.5);
+      audio.explode();
+      shake = Math.max(shake, 0.7);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 80, 34, 2.4);
+      audio.bigExplode();
+      shake = 1.7;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 10 * dt;
+    if (m.position.x <= play.fw - 16) {
+      b.entered = true;
+      b.baseX = m.position.x;
+      say('vex', 'You wished to meet the rest of me? BEHOLD the Serpent Throne. Kneel, little pilot — everyone does, in the end.', 'v_boss11', 4.5);
+      say('kamus', "A giant walking chair. He built a giant... walking... CHAIR. I can't let him win — imagine the sequel.", 'k_boss11', 3.5);
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+
+  // stance clock: exposed artillery platform <-> shielded charging stomp
+  b.stanceT -= dt;
+  if (b.stance === 'ranged' && b.stanceT <= 0) {
+    b.stance = 'charge';
+    b.stanceT = phase === 3 ? 7 : 6;
+    audio.hit();
+  } else if (b.stance === 'charge' && b.stanceT <= 0) {
+    b.stance = 'ranged';
+    b.stanceT = phase === 3 ? 6 : 8;
+  }
+  const shielded = b.stance === 'charge';
+  b.dome.material.opacity += ((shielded ? 0.22 : 0) - b.dome.material.opacity) * Math.min(1, 6 * dt);
+
+  if (shielded) {
+    // stomps down the field toward you, shrugging off fire, ringing on each step
+    b.chargeX = Math.min(b.chargeX + 14 * dt, play.fw * 1.15);
+    b.ringT = (b.ringT ?? 0) - dt;
+    if (b.ringT <= 0 && player.alive) {
+      const n = phase === 3 ? 12 : 9;
+      const off = Math.random() * Math.PI;
+      for (let k = 0; k < n; k++)
+        enemyFireAngle(m.position, off + k / n * Math.PI * 2, 16);
+      audio.enemyShoot();
+      shake = Math.max(shake, 0.3);
+      b.ringT = 1.3;
+    }
+  } else {
+    b.chargeX = Math.max(0, b.chargeX - 20 * dt); // withdraws to its firing line
+  }
+  m.position.x = b.baseX - b.chargeX + Math.sin(b.t * 0.4) * 2;
+  m.position.y = Math.sin(b.t * 0.5 * (phase === 3 ? 1.4 : 1)) * (play.lat - 12);
+
+  if (!player.alive || shielded) return;
+
+  b.cool.wall -= dt; // artillery wall with a gap
+  if (b.cool.wall <= 0) {
+    b.gapPhase += 1.3;
+    const gapY = Math.sin(b.gapPhase) * (play.lat - 10);
+    for (let y = -play.lat + 3; y <= play.lat - 3; y += 3.8) {
+      if (Math.abs(y - gapY) < 5.4) continue;
+      enemyFireAngle(new THREE.Vector3(m.position.x - 8, y, 0), Math.PI, 19);
+    }
+    audio.enemyShoot();
+    b.cool.wall = phase === 1 ? 4.6 : phase === 2 ? 3.8 : 3.2;
+  }
+  b.cool.aim -= dt;
+  if (b.cool.aim <= 0) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'throne' && !boss.dying && boss.stance === 'ranged' && player.alive)
+          enemyFire(boss.mesh.position, 28);
+      }, k * 130);
+    b.cool.aim = phase === 1 ? 2.6 : 2;
+  }
+  if (phase >= 2) {
+    b.cool.homing -= dt;
+    if (b.cool.homing <= 0) {
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, 5, 0)), 17);
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, -5, 0)), 17);
+      b.cool.homing = phase === 3 ? 2.8 : 3.4;
+    }
+  }
+  if (phase >= 3) {
+    b.cool.spawn -= dt; // the royal guard sallies out
+    if (b.cool.spawn <= 0 && enemies.length < 32) {
+      spawnEnemy('tank', m.position.y + (Math.random() > 0.5 ? 9 : -9));
+      spawnEnemy('lancer', (Math.random() * 2 - 1) * (play.lat - 8));
+      b.cool.spawn = 8;
+    }
+  }
+}
+
+// stage 12 boss: VEX ETERNAL — three forms. The exo-frame, the Gorgon's Eye,
+// and at the last, Gorgon Prime: what's left of Vex fused into the core itself.
+function makeVexFinal() {
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x16101e, metalness: 0.8, roughness: 0.3 });
+  const chromeMat = new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.9, roughness: 0.2 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x5a2080, emissive: 0x1c0a2a, metalness: 0.6, roughness: 0.4 });
+
+  // FORM 1 — VEX ASCENDANT: a fighter-sized exo-frame with his skull for a nose
+  const f1 = new THREE.Group();
+  const f1body = new THREE.Mesh(new THREE.ConeGeometry(1.6, 7, 6), darkMat);
+  f1body.rotation.z = Math.PI / 2;
+  f1.add(f1body);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), chromeMat);
+  skull.position.x = -3.2;
+  f1.add(skull);
+  const f1eye = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+  f1eye.position.set(-4.1, 0.2, 0);
+  f1.add(f1eye);
+  for (const zz of [-1, 1]) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.25, 2.6), trimMat);
+    blade.position.set(1.2, 0, zz * 2.2);
+    blade.rotation.y = zz * 0.4;
+    f1.add(blade);
+  }
+  const f1flame = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3, 8),
+    new THREE.MeshBasicMaterial({ color: 0xb060ff }));
+  f1flame.rotation.z = -Math.PI / 2;
+  f1flame.position.x = 4.4;
+  f1.add(f1flame);
+
+  // FORM 2 — THE GORGON'S EYE: the core opens; four shield plates orbit it
+  const f2 = new THREE.Group();
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(5, 18, 14),
+    new THREE.MeshStandardMaterial({ color: 0x2a1830, emissive: 0x0e0614, metalness: 0.5, roughness: 0.4 }));
+  f2.add(orb);
+  const iris = new THREE.Mesh(new THREE.SphereGeometry(2.4, 14, 12),
+    new THREE.MeshStandardMaterial({ color: 0xffd040, emissive: 0xa06010, metalness: 0.2, roughness: 0.2 }));
+  iris.position.x = -3.2;
+  f2.add(iris);
+  const pupil = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0x100808 }));
+  pupil.position.x = -4.6;
+  f2.add(pupil);
+  const plates = [];
+  for (let i = 0; i < 4; i++) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 4.6, 3.2), chromeMat);
+    f2.add(plate);
+    plates.push(plate);
+  }
+  f2.visible = false;
+
+  // FORM 3 — GORGON PRIME: the cracked core, spiked, with Vex's face in it
+  const f3 = new THREE.Group();
+  const core3 = new THREE.Mesh(new THREE.SphereGeometry(5, 18, 14),
+    new THREE.MeshStandardMaterial({ color: 0x6a1020, emissive: 0x400810, metalness: 0.3, roughness: 0.3 }));
+  f3.add(core3);
+  for (let i = 0; i < 8; i++) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.8, 3.4, 5), darkMat);
+    const a = i / 8 * Math.PI * 2;
+    spike.position.set(Math.cos(a) * 5.2, Math.sin(a) * 5.2, 0);
+    spike.rotation.z = a - Math.PI / 2;
+    f3.add(spike);
+  }
+  const face = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 10), chromeMat);
+  face.position.x = -4.4;
+  f3.add(face);
+  const f3eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2020 }));
+  f3eye.position.set(-5.6, 0.3, 0);
+  f3.add(f3eye);
+  f3.visible = false;
+
+  const light = new THREE.PointLight(0xb060ff, 70, 50);
+  f1.add(light.clone()); f2.add(light.clone()); f3.add(light.clone());
+  const start = new THREE.Vector3(play.fw + 24, 0, 0);
+  f1.position.copy(start); f2.position.copy(start); f3.position.copy(start);
+  scene.add(f1); scene.add(f2); scene.add(f3);
+
+  return {
+    kind: 'vexfinal', mesh: f1, forms: [f1, f2, f3], extras: [f1, f2, f3],
+    plates, core3, form: 1, formHp: [300, 350, 250],
+    hp: 300, reserve: 600, maxHp: 300, totalMax: 900, bounty: 50000,
+    radius: 3.2, t: 0, entered: false, dying: 0, transitionT: 0,
+    dashT: 6.5, dashPhase: 'idle', dashClock: 0, dashX: 0,
+    spiralA: 0, spiralT: 0, gapPhase: 0,
+    cool: { aim: 2.2, fan: 3.4, wall: 4, homing: 3, ring: 2.6, spawn: 6 },
+  };
+}
+
+function vexNextForm() {
+  const b = boss;
+  b.form += 1;
+  const next = b.formHp[b.form - 1];
+  b.hp = next;
+  b.reserve -= next;
+  b.transitionT = 2.4;
+  burst(b.mesh.position, 50, 30, 2);
+  audio.bigExplode();
+  shake = 1.4;
+  if (b.form === 2) {
+    say('vex', 'Flesh... failed me. The CORE will not. BEHOLD THE EYE OF THE GORGON.', 'v_form2', 3.5);
+  } else {
+    // the sacrifice: Zeraa takes the gaze meant for Kamus
+    zeraaRun();
+    say('zeraa', "Kamus, MOVE— One good deed, darling... make it count—", 'z_sacrifice', 3);
+    say('kamus', 'ZERAA! ...You want eternal, Vex? Let me show you what BURNS forever.', 'k_rage', 3.5);
+    player.shield = true; // her parting gift
+    updateLivesHud();
+  }
+}
+
+function updateVexFinal(dt) {
+  const b = boss;
+  b.t += dt;
+
+  if (b.transitionT > 0) { // form swap: invulnerable, wreathed in explosions
+    b.transitionT -= dt;
+    if (Math.random() < 0.4) {
+      burst(b.mesh.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 4)), 10, 18, 1.2);
+      audio.explode();
+    }
+    if (b.transitionT <= 1.2 && b.mesh !== b.forms[b.form - 1]) {
+      const pos = b.mesh.position.clone();
+      b.mesh.visible = false;
+      b.mesh = b.forms[b.form - 1];
+      b.mesh.position.copy(pos);
+      b.mesh.visible = true;
+      b.radius = b.form === 1 ? 3.2 : 5.2;
+    }
+    return;
+  }
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (!b.saidEnd) {
+      b.saidEnd = true;
+      say('vex', 'Impossible... I was... I was going to be... eternal...', 'v_end', 3.5);
+    }
+    if (Math.random() < 0.5) {
+      burst(b.mesh.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 6)), 16, 24, 1.6);
+      audio.explode();
+      shake = Math.max(shake, 0.8);
+    }
+    if (b.dying <= 0) {
+      burst(b.mesh.position, 90, 36, 2.6);
+      audio.bigExplode();
+      shake = 2;
+      for (let i = enemies.length - 1; i >= 0; i--) { // the Gorgon dies entirely
+        burst(enemies[i].mesh.position, 6, 10, 0.8);
+        scene.remove(enemies[i].mesh);
+        enemies.splice(i, 1);
+      }
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    b.mesh.position.x -= 14 * dt;
+    if (b.mesh.position.x <= play.fw - 14) {
+      b.entered = true;
+      say('vex', 'You are too late, little pilot. The core and I are ONE. Kneel before VEX ETERNAL.', 'v_eternal', 4);
+    }
+    return;
+  }
+
+  const m = b.mesh;
+  if (b.form === 1) {
+    // exo-frame: fast, personal, duelist
+    if (b.dashPhase === 'idle') {
+      b.dashT -= dt;
+      if (b.dashT <= 0) { b.dashPhase = 'lunge'; b.dashClock = 0.5; audio.hit(); }
+    } else if (b.dashPhase === 'lunge') {
+      b.dashClock -= dt;
+      b.dashX = Math.max(b.dashX - 40 * dt, -play.fw * 1.2);
+      if (b.dashClock <= 0) b.dashPhase = 'return';
+    } else {
+      b.dashX += 18 * dt;
+      if (b.dashX >= 0) { b.dashX = 0; b.dashPhase = 'idle'; b.dashT = 6.5; }
+    }
+    m.position.x = play.fw - 14 + Math.sin(b.t * 0.7) * 5 + b.dashX;
+    m.position.y = Math.sin(b.t * 1.1) * (play.lat - 8);
+    m.rotation.x = Math.cos(b.t * 1.1) * 0.4;
+    if (!player.alive) return;
+    b.cool.aim -= dt;
+    if (b.cool.aim <= 0) {
+      for (let k = 0; k < 3; k++)
+        setTimeout(() => {
+          if (boss && boss.kind === 'vexfinal' && !boss.dying && !boss.transitionT && player.alive)
+            enemyFire(boss.mesh.position, 30);
+        }, k * 120);
+      b.cool.aim = 1.9;
+    }
+    b.cool.fan -= dt;
+    if (b.cool.fan <= 0) {
+      for (let k = -2; k <= 2; k++) enemyFire(m.position, 24, k * 0.2);
+      b.cool.fan = 3.2;
+    }
+  } else if (b.form === 2) {
+    // the Eye: fortified artillery core behind orbiting plates
+    m.position.x = play.fw - 15 + Math.sin(b.t * 0.3) * 2;
+    m.position.y = Math.sin(b.t * 0.4) * (play.lat - 14);
+    b.plates.forEach((p, i) => {
+      const a = b.t * 1.2 + i * Math.PI / 2;
+      p.position.set(Math.cos(a) * 8.5, Math.sin(a) * 8.5, 0);
+      p.rotation.z = a;
+    });
+    if (!player.alive) return;
+    b.spiralT += dt;
+    while (b.spiralT >= 0.12) {
+      b.spiralT -= 0.12;
+      enemyFireAngle(m.position, b.spiralA, 17);
+      enemyFireAngle(m.position, -b.spiralA + Math.PI, 17);
+      b.spiralA += 0.46;
+    }
+    b.cool.wall -= dt;
+    if (b.cool.wall <= 0) {
+      b.gapPhase += 1.2;
+      const gapY = Math.sin(b.gapPhase) * (play.lat - 9);
+      for (let y = -play.lat + 3; y <= play.lat - 3; y += 3.8) {
+        if (Math.abs(y - gapY) < 5.4) continue;
+        enemyFireAngle(new THREE.Vector3(m.position.x - 7, y, 0), Math.PI, 19);
+      }
+      audio.enemyShoot();
+      b.cool.wall = 4.2;
+    }
+    b.cool.homing -= dt;
+    if (b.cool.homing <= 0) {
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, 5, 0)), 17);
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, -5, 0)), 17);
+      b.cool.homing = 3;
+    }
+  } else {
+    // Gorgon Prime: pure escalation — survive the storm
+    const pulse = 1 + Math.sin(b.t * 6) * 0.05;
+    b.core3.scale.setScalar(pulse);
+    m.position.x = play.fw - 15;
+    m.position.y = Math.sin(b.t * 0.6) * (play.lat - 12);
+    if (!player.alive) return;
+    b.spiralT += dt;
+    while (b.spiralT >= 0.09) {
+      b.spiralT -= 0.09;
+      enemyFireAngle(m.position, b.spiralA, 19);
+      enemyFireAngle(m.position, -b.spiralA + Math.PI, 19);
+      b.spiralA += 0.52;
+    }
+    b.cool.ring -= dt;
+    if (b.cool.ring <= 0) {
+      const off = Math.random() * Math.PI;
+      for (let k = 0; k < 14; k++)
+        enemyFireAngle(m.position, off + k / 14 * Math.PI * 2, 16);
+      audio.enemyShoot();
+      b.cool.ring = 2.6;
+    }
+    b.cool.aim -= dt;
+    if (b.cool.aim <= 0) {
+      enemyFire(m.position, 30);
+      b.cool.aim = 1.6;
+    }
+    b.cool.spawn -= dt;
+    if (b.cool.spawn <= 0 && enemies.length < 26) {
+      spawnEnemy(Math.random() > 0.5 ? 'phantom' : 'splitter',
+        (Math.random() * 2 - 1) * (play.lat - 8));
+      b.cool.spawn = 6;
+    }
+  }
+}
+
 function spawnBoss() {
   const st = STAGES[stageIdx];
   boss = st.makeBoss();
@@ -896,7 +2457,7 @@ function spawnBoss() {
 }
 
 function updateBossBar() {
-  let hp = boss.hp;
+  let hp = boss.hp + (boss.reserve || 0);
   if (boss.pods) for (const p of boss.pods) if (p.alive) hp += Math.max(0, p.hp);
   document.getElementById('bossbar').style.width =
     Math.max(0, hp / (boss.totalMax || boss.maxHp) * 100) + '%';
@@ -910,6 +2471,7 @@ function removeBoss() {
   scene.remove(boss.mesh);
   if (boss.segs) for (const s of boss.segs) scene.remove(s);
   if (boss.pods) for (const p of boss.pods) if (p.alive) scene.remove(p.mesh);
+  if (boss.extras) for (const e of boss.extras) scene.remove(e);
   boss = null;
   document.getElementById('bossbar-wrap').classList.remove('on');
 }
@@ -919,7 +2481,234 @@ function updateBoss(dt) {
   if (boss.kind === 'carrier') updateCarrier(dt);
   else if (boss.kind === 'serpent') updateSerpent(dt);
   else if (boss.kind === 'fortress') updateFortress(dt);
-  else updateHarvester(dt);
+  else if (boss.kind === 'harvester') updateHarvester(dt);
+  else if (boss.kind === 'drillmaw') updateDrillmaw(dt);
+  else if (boss.kind === 'colossus') updateColossus(dt);
+  else if (boss.kind === 'siren') updateSiren(dt);
+  else if (boss.kind === 'mirror') updateMirror(dt);
+  else if (boss.kind === 'queen') updateQueen(dt);
+  else if (boss.kind === 'chromefang') updateChromeFang(dt);
+  else if (boss.kind === 'throne') updateThrone(dt);
+  else updateVexFinal(dt);
+}
+
+function updateSiren(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (!b.saidFlee) {
+      b.saidFlee = true;
+      say('zeraa', '...Perhaps I chose the wrong side after all. Until next time, darling.', 'z_flee', 3);
+    }
+    if (b.dying > 0.8 && Math.random() < 0.4) {
+      burst(m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 4)), 10, 18, 1.1);
+      audio.explode();
+      shake = Math.max(shake, 0.5);
+    }
+    if (b.dying <= 0.8) m.position.x += 90 * dt; // she RUNS — trailing smoke, not dead
+    if (b.dying <= 0) {
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 18 * dt;
+    if (m.position.x <= -play.fw + 58) {
+      b.entered = true;
+      say('zeraa', "Don't take it personally, darling. The Gorgon always collects its debts.", 'z_boss', 3);
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+
+  // veil cycle (phase 2+): cloaks, slings homing orbs, decloaks with a ring
+  if (phase >= 2) {
+    b.veilT -= dt;
+    if (!b.veiled && b.veilT <= 0) {
+      b.veiled = true;
+      b.veilT = 3;
+      b.homingT = 0.4;
+      audio.radio();
+    } else if (b.veiled && b.veilT <= 0) {
+      b.veiled = false;
+      b.veilT = phase === 3 ? 6 : 8;
+      const off = Math.random() * Math.PI; // decloak strike
+      for (let k = 0; k < 12; k++)
+        enemyFireAngle(m.position, off + k / 12 * Math.PI * 2, 16);
+      audio.enemyShoot();
+    }
+  }
+  const fade = b.veiled ? 0.12 : 1;
+  for (const mat of b.mats) mat.opacity += (fade - mat.opacity) * Math.min(1, 6 * dt);
+  b.veilMesh.material.opacity = b.veiled ? 0.18 + Math.sin(b.t * 6) * 0.06 : 0;
+
+  // paces ahead of you in the conduit, weaving
+  m.position.x = -play.fw + 58 + Math.sin(b.t * 0.5) * 5;
+  m.position.y = Math.sin(b.t * 0.75 * (phase === 3 ? 1.5 : 1)) * (play.lat - 8);
+  m.rotation.x = Math.cos(b.t * 0.75) * 0.35; // banks with her own weave
+
+  if (!player.alive) return;
+
+  if (b.veiled) { // homing orbs slip out of the shimmer
+    b.homingT -= dt;
+    if (b.homingT <= 0) {
+      enemyFireHoming(m.position, 17);
+      b.homingT = 1.1;
+    }
+    return; // no other attacks while veiled
+  }
+
+  b.cool.aim -= dt;
+  if (b.cool.aim <= 0) {
+    for (let k = 0; k < 3; k++)
+      setTimeout(() => {
+        if (boss && boss.kind === 'siren' && !boss.dying && !boss.veiled && player.alive)
+          enemyFire(boss.mesh.position, 28);
+      }, k * 130);
+    b.cool.aim = phase === 1 ? 2.4 : phase === 2 ? 1.9 : 1.4;
+  }
+  b.cool.fan -= dt;
+  if (b.cool.fan <= 0) {
+    for (let k = -2; k <= 2; k++) enemyFire(m.position, 22, k * 0.22);
+    b.cool.fan = phase === 3 ? 2.8 : 3.6;
+  }
+  if (phase === 3) { // desperate twin spirals
+    b.spiralT += dt;
+    while (b.spiralT >= 0.12) {
+      b.spiralT -= 0.12;
+      enemyFireAngle(m.position, b.spiralA, 18);
+      enemyFireAngle(m.position, -b.spiralA + Math.PI, 18);
+      b.spiralA += 0.5;
+    }
+  }
+  b.cool.spawn -= dt;
+  if (b.cool.spawn <= 0) { // mirror escorts
+    spawnEnemy(phase === 3 ? 'splitter' : 'phantom', (Math.random() * 2 - 1) * (play.lat - 8));
+    b.cool.spawn = phase === 3 ? 5 : 7;
+  }
+}
+
+function updateColossus(dt) {
+  const b = boss, m = b.mesh;
+  b.t += dt;
+  b.core.rotation.y += 1.5 * dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (Math.random() < 0.45) {
+      const p = m.position.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 6));
+      burst(p, 14, 22, 1.4);
+      audio.explode();
+      shake = Math.max(shake, 0.7);
+    }
+    if (b.dying <= 0) {
+      burst(m.position, 70, 32, 2.2);
+      audio.bigExplode();
+      shake = 1.6;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  if (!b.entered) {
+    m.position.x -= 11 * dt;
+    if (m.position.x <= play.fw - 15) {
+      b.entered = true;
+      say('kamus', 'The junk is fighting back?! Nova, your yard is HAUNTED!', 'k_boss6');
+    }
+    return;
+  }
+
+  if (b.cState === 'collapsed') {
+    b.cT -= dt;
+    for (const p of b.parts) { // pieces drift apart, slowly spinning
+      p.mesh.position.addScaledVector(p.vel, dt);
+      p.mesh.rotation.z += p.spin * dt;
+      p.vel.multiplyScalar(1 - dt * 0.8);
+    }
+    if (b.cT <= 0) {
+      b.cState = 'reassemble';
+      b.cT = 1.8;
+    }
+    return;
+  }
+  if (b.cState === 'reassemble') {
+    b.cT -= dt;
+    const k = Math.min(1, 4 * dt);
+    for (const p of b.parts) {
+      p.mesh.position.lerp(p.home, k);
+      p.mesh.rotation.x *= 1 - k;
+      p.mesh.rotation.y *= 1 - k;
+      p.mesh.rotation.z *= 1 - k;
+    }
+    if (b.cT <= 0) {
+      b.cState = 'fight';
+      b.enraged = true;
+      for (const p of b.parts) { p.mesh.position.copy(p.home); p.mesh.rotation.set(0, 0, 0); }
+      const off = Math.random() * Math.PI; // rebirth blast
+      for (let k2 = 0; k2 < 14; k2++)
+        enemyFireAngle(m.position, off + k2 / 14 * Math.PI * 2, 17);
+      audio.bigExplode();
+      shake = 1;
+    }
+    return;
+  }
+
+  // fight
+  const rage = b.enraged ? 1.35 : 1;
+  m.position.x = play.fw - 15 + Math.sin(b.t * 0.45) * 3;
+  m.position.y = Math.sin(b.t * 0.6 * rage) * (play.lat - 13);
+  // swing the fist flails
+  b.fists.forEach((f, i) => {
+    const a = b.t * 1.6 * rage + i * Math.PI;
+    const fx = Math.cos(a) * 10, fy = Math.sin(a) * 8;
+    f.fist.position.set(fx, fy, 0);
+    f.chain.position.set(fx * 0.5, fy * 0.5, 0);
+    f.chain.rotation.z = Math.atan2(fy, fx);
+    f.chain.scale.x = Math.hypot(fx, fy) * 0.55;
+  });
+
+  if (!player.alive) return;
+
+  b.cool.throw -= dt;
+  if (b.cool.throw <= 0) { // hurls a chunk of debris at you
+    const dy = player.pos.y - m.position.y;
+    const dx = Math.max(6, m.position.x - player.pos.x);
+    spawnEnemy('astS', m.position.y, {
+      x: m.position.x - 7,
+      sp: 26, vy: THREE.MathUtils.clamp(dy / (dx / 26), -15, 15),
+    });
+    b.cool.throw = (b.enraged ? 1.8 : 2.4);
+  }
+  b.cool.fan -= dt;
+  if (b.cool.fan <= 0) {
+    for (let k = -2; k <= 2; k++) enemyFire(m.position, 23, k * 0.24);
+    b.cool.fan = b.enraged ? 2.8 : 3.6;
+  }
+  if (b.enraged) {
+    b.cool.ring -= dt;
+    if (b.cool.ring <= 0) {
+      const off = Math.random() * Math.PI;
+      for (let k = 0; k < 12; k++)
+        enemyFireAngle(m.position, off + k / 12 * Math.PI * 2, 16);
+      audio.enemyShoot();
+      b.cool.ring = 3.2;
+    }
+    b.cool.homing -= dt;
+    if (b.cool.homing <= 0) {
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, 5, 0)), 17);
+      enemyFireHoming(m.position.clone().add(new THREE.Vector3(0, -5, 0)), 17);
+      b.cool.homing = 3.5;
+    }
+  }
 }
 
 function updateCarrier(dt) {
@@ -1368,9 +3157,164 @@ function updateHarvester(dt) {
   }
 }
 
+function updateDrillmaw(dt) {
+  const b = boss, head = b.mesh;
+  b.t += dt;
+  b.stateT -= dt;
+  head.userData.spinner.rotation.x += 9 * dt;
+
+  if (b.dying > 0) {
+    b.dying -= dt;
+    if (Math.random() < 0.4) {
+      const s = b.segs[(Math.random() * b.segs.length) | 0];
+      burst(s.position.clone().setZ(0), 12, 20, 1.2);
+      audio.explode();
+      shake = Math.max(shake, 0.6);
+    }
+    if (b.dying <= 0) {
+      burst(head.position.clone().setZ(0), 55, 30, 2);
+      audio.bigExplode();
+      shake = 1.5;
+      removeBoss();
+      stageClear();
+    }
+    return;
+  }
+
+  const phase = bossPhase();
+  const latMax = (STAGES[stageIdx].canyon ? canyonWallY() : play.lat) - 8;
+
+  const pushTrail = () => {
+    if (head.position.distanceTo(b.trail[0]) > 0.25)
+      b.trail.unshift(head.position.clone());
+    if (b.trail.length > 200) b.trail.pop();
+    const spacing = 3.0;
+    let acc = 0, ti = 0;
+    for (let s = 0; s < b.segs.length; s++) {
+      const want = (s + 1) * spacing;
+      while (ti < b.trail.length - 1 && acc < want) {
+        acc += b.trail[ti].distanceTo(b.trail[ti + 1]);
+        ti++;
+      }
+      b.segs[s].position.copy(b.trail[ti]);
+    }
+  };
+
+  if (b.state === 'buried') {
+    // the dust mound stalks the player; the worm is untouchable down there
+    const speed = 13 + phase * 4;
+    const dir = new THREE.Vector3(player.pos.x - b.mound.position.x,
+      player.pos.y - b.mound.position.y, 0);
+    if (dir.length() > 0.5) {
+      dir.normalize();
+      b.mound.position.x += dir.x * speed * dt;
+      b.mound.position.y = THREE.MathUtils.clamp(
+        b.mound.position.y + dir.y * speed * dt, -latMax, latMax);
+    }
+    const s = 1 + Math.sin(b.t * 9) * 0.12;
+    b.mound.scale.set(1.3 * s, 1.3 * s, 0.4);
+    if (Math.random() < 0.2) burst(b.mound.position.clone().setZ(-4), 2, 5, 0.6);
+    if (b.stateT <= 0) {
+      b.state = 'erupt';
+      b.stateT = 0.55;
+      b.mound.visible = false;
+      head.position.set(b.mound.position.x, b.mound.position.y, -9);
+      b.trail.length = 0;
+      b.trail.push(head.position.clone());
+      head.visible = true;
+      for (const s2 of b.segs) { s2.visible = true; s2.position.copy(head.position); }
+      burst(head.position.clone().setZ(0), 20, 16, 1.3);
+      audio.explode();
+      shake = Math.max(shake, 0.6);
+      if (!b.saidIntro) {
+        b.saidIntro = true;
+        say('kamus', "It swims through ROCK?! Fine — I'll shoot the rock.", 'k_boss5');
+      }
+    }
+    return;
+  }
+
+  if (b.state === 'erupt') {
+    head.position.z = Math.min(0, head.position.z + 17 * dt);
+    pushTrail();
+    if (b.stateT <= 0) {
+      b.state = 'surfaced';
+      b.stateT = phase === 3 ? 5.5 : 7;
+      head.position.z = 0;
+      const n = 8 + phase * 2;
+      for (let k = 0; k < n; k++)
+        enemyFireAngle(head.position, k / n * Math.PI * 2, 15);
+      audio.enemyShoot();
+    }
+    return;
+  }
+
+  if (b.state === 'surfaced') {
+    b.prev.copy(head.position);
+    head.position.x = THREE.MathUtils.clamp(
+      head.position.x + Math.sin(b.t * 0.8) * 9 * dt, -play.fw * 0.2, play.fw - 8);
+    head.position.y = THREE.MathUtils.clamp(
+      head.position.y + Math.cos(b.t * 0.6) * 11 * dt, -latMax, latMax);
+    const dx = head.position.x - b.prev.x, dy = head.position.y - b.prev.y;
+    if (Math.abs(dx) + Math.abs(dy) > 0.001)
+      head.rotation.z = Math.atan2(dy, dx) + Math.PI;
+    pushTrail();
+    if (player.alive) {
+      b.cool.aim -= dt;
+      if (b.cool.aim <= 0) {
+        for (let k = 0; k < 3; k++)
+          setTimeout(() => {
+            if (boss && boss.kind === 'drillmaw' && boss.state === 'surfaced' && player.alive)
+              enemyFire(boss.mesh.position, 27);
+          }, k * 140);
+        b.cool.aim = phase === 1 ? 2.3 : phase === 2 ? 1.8 : 1.3;
+      }
+      if (phase >= 2) {
+        b.cool.fan -= dt;
+        if (b.cool.fan <= 0) {
+          for (let k = -2; k <= 2; k++) enemyFire(head.position, 21, k * 0.26);
+          b.cool.fan = 3.4;
+        }
+      }
+    }
+    if (b.stateT <= 0) {
+      b.state = 'dive';
+      b.stateT = 0.5;
+    }
+    return;
+  }
+
+  // dive
+  head.position.z -= 20 * dt;
+  pushTrail();
+  if (b.stateT <= 0) {
+    head.visible = false;
+    for (const s of b.segs) s.visible = false;
+    b.mound.visible = true;
+    b.mound.position.set(head.position.x, head.position.y, -6.5);
+    b.state = 'buried';
+    b.stateT = phase === 3 ? 3 : 4.5;
+    if (phase >= 2) // it leaves spawn behind
+      spawnEnemy('burrower', THREE.MathUtils.clamp(head.position.y, -latMax, latMax),
+        { x: THREE.MathUtils.clamp(head.position.x, -play.fw * 0.2, play.fw - 6) });
+  }
+}
+
 function hitBoss(dmg) {
   if (!boss || !boss.entered || boss.dying > 0) return;
   boss.hp -= dmg;
+  if (boss.hp <= 0 && boss.reserve > 0) {
+    if (boss.kind === 'vexfinal') {
+      vexNextForm(); // sheds a form and fights on
+    } else {
+      // the colossus falls apart... and pulls itself back together
+      boss.hp = boss.reserve;
+      boss.reserve = 0;
+      colossusCollapse();
+    }
+    updateBossBar();
+    return;
+  }
   updateBossBar();
   if (boss.hp <= 0) {
     boss.dying = boss.kind === 'fortress' || boss.kind === 'harvester' ? 3.2 : 2.6;
@@ -1396,6 +3340,8 @@ let eventIdx = 0;
 let bossPhaseStarted = false;
 let astTimer = 2;
 let saidPower = false;
+let saidShield = false;
+let saidOrbital = false;
 
 function droneWave(n, y, amp, spacing) {
   for (let i = 0; i < n; i++)
@@ -1495,6 +3441,14 @@ function tankRow(ys) {
   ys.forEach((y, i) =>
     setTimeout(() => { if (state === 'playing') spawnEnemy('tank', y); }, i * 400));
 }
+// burrowers erupt mid-screen, not at the edge — xFrac places the mound
+function burrowers(ys, xFrac) {
+  ys.forEach((y, i) =>
+    setTimeout(() => {
+      if (state === 'playing')
+        spawnEnemy('burrower', y, { x: play.fw * (xFrac ?? 0.45) + (Math.random() - 0.5) * 6 });
+    }, i * 300));
+}
 
 // stage 2 ambient hazard: a steady drizzle of asteroids until the boss warning
 function beltAmbient(dt) {
@@ -1505,6 +3459,18 @@ function beltAmbient(dt) {
       sp: 10 + Math.random() * 8,
     });
     astTimer = 2.0 + Math.random() * 1.8;
+  }
+}
+
+// stage 6 ambient: drifting wreck debris
+function junkAmbient(dt) {
+  astTimer -= dt;
+  if (astTimer <= 0 && levelTime > 4 && levelTime < 79) {
+    spawnEnemy('junk', (Math.random() * 2 - 1) * (play.lat - 4), {
+      vy: (Math.random() - 0.5) * 6,
+      sp: 9 + Math.random() * 8,
+    });
+    astTimer = 1.9 + Math.random() * 1.5;
   }
 }
 
@@ -1531,7 +3497,7 @@ const TIMELINE3 = [
   { t: 21,   fn: () => { raiders(4); droneWave(5, 0, 10); } },
   { t: 26,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); spawnEnemy('heavy', -8); weaverWall([10, -2]); } },
   { t: 31,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('turret', 0); spawnEnemy('turret', -8); darterStack([10, 4, -2, -8, -12]) } },
-  { t: 35,   fn: () => say('commander', "Swarm density is off the charts — they're throwing everything at you. Stay loose!", 'c_swarm', 3) },
+  { t: 35,   fn: () => say('zeraa', "Intelligence confirms it, darling — the swarm thickens near the fortress. You're getting close.", 'z_swarm', 3) },
   { t: 36,   fn: () => { droneWave(12, 0, 12, 200); raiders(3); } },
   { t: 41,   fn: () => { mineRow([12, 8, 4, 0, -4, -8, -12]); weaverWall([6, -6, 0]); } },
   { t: 46,   fn: () => { orbiterPair(9); orbiterPair(0); orbiterPair(-9); darterStack([11, 5, -1, -7, -11, 8]); } },
@@ -1569,6 +3535,242 @@ const TIMELINE4 = [
   { t: 87,   fn: bossArrive },
 ];
 
+const TIMELINE5 = [
+  { t: 0.5,  fn: () => say('commander',
+      "The harvest fleet is fleeing up the Red Canyon toward their dig site. It's a shooting gallery in there, Kamus — walls tight, guns hot.", 'c_briefing5', 4.5) },
+  { t: 3,    fn: () => say('kamus', 'Tight walls, huh? Good thing I never learned to fly straight.', 'k_stage5', 3) },
+  { t: 5,    fn: () => droneWave(5, 4, 4) },
+  { t: 9,    fn: () => tankRow([7, -7]) },
+  { t: 12.5, fn: () => say('klorp', 'Seismic spikes! They swim BENEATH the sand — regard every mound with suspicion!', 'd_burrow', 3) },
+  { t: 13,   fn: () => burrowers([8, -8], 0.45) },
+  { t: 18,   fn: () => { darterStack([9, 3, -3, -9]); droneWave(4, -6, 4); } },
+  { t: 23,   fn: () => raiders(4) },
+  { t: 27,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); tankRow([9, -9]); } },
+  { t: 33,   fn: () => { burrowers([5, -5, 0], 0.35); weaverWall([9, -9]); } },
+  { t: 39,   fn: () => { mineRow([8, 0, -8]); darterStack([11, 5, -5, -11]); } },
+  { t: 45,   fn: () => { tankRow([10, 4, -4, -10]); droneWave(8, 0, 9, 260); } },
+  { t: 51,   fn: () => { burrowers([7, -2, -9], 0.55); orbiterPair(5); } },
+  { t: 57,   fn: () => { spawnEnemy('heavy', -5); spawnEnemy('heavy', 6, { drops: true }); raiders(3); } },
+  { t: 63,   fn: () => { weaverWall([8, 0, -8]); tankRow([6, -6]); burrowers([3, -3], 0.3); } },
+  { t: 70,   fn: () => { droneWave(10, 0, 11, 240); darterStack([9, 4, -4, -9, 0]); } },
+  { t: 76,   fn: () => { burrowers([9, 2, -5, -10], 0.5); tankRow([8, -8]); raiders(3); } },
+  { t: 82,   fn: () => bossWarning('c_warning5',
+      "The seismic readings just went off the scale... it's coming UP. Kamus, the DRILLMAW — hit it when it surfaces!") },
+  { t: 87,   fn: bossArrive },
+];
+
+const TIMELINE6 = [
+  { t: 0.5,  fn: () => say('commander',
+      'Not quite, Kamus. Their salvage fleet is regrouping in the orbital junkyard — the wrecks of the first war. Clear it out, and the swarm has nowhere left to hide.', 'c_briefing6', 4.5) },
+  { t: 3.5,  fn: () => say('kamus', 'A graveyard of ships... show some respect, Swarm. This is hallowed ground.', 'k_stage6', 3) },
+  { t: 6,    fn: () => droneWave(5, 4, 5) },
+  { t: 10,   fn: () => { spawnEnemy('turret', 7); spawnEnemy('turret', -7); } },
+  { t: 14,   fn: () => { orbiterPair(6); orbiterPair(-6); } },
+  { t: 17,   fn: () => say('nova', 'Careful in there, hotshot — I salvaged half my rig from that yard. Some of those wrecks still bite.', 'n_junk', 3.5) },
+  { t: 19,   fn: () => { weaverWall([8, -8]); darterStack([10, 3, -4, -11]); } },
+  { t: 24,   fn: () => mineRow([9, 0, -9]) },
+  { t: 29,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); spawnEnemy('turret', -8); spawnEnemy('turret', 10); } },
+  { t: 35,   fn: () => { raiders(4); droneWave(6, 0, 8); } },
+  { t: 41,   fn: () => { weaverWall([9, 0, -9]); mineRow([6, -6]); } },
+  { t: 47,   fn: () => { orbiterPair(8); orbiterPair(0); orbiterPair(-8); darterStack([12, 6, -6, -12]); } },
+  { t: 53,   fn: () => { spawnEnemy('heavy', -5); spawnEnemy('heavy', 7, { drops: true }); spawnEnemy('turret', 0); } },
+  { t: 59,   fn: () => { droneWave(10, 0, 11, 240); raiders(3); } },
+  { t: 65,   fn: () => { weaverWall([10, 4, -4, -10]); mineRow([8, 0, -8]); } },
+  { t: 71,   fn: () => { spawnEnemy('turret', 9); spawnEnemy('turret', -9); spawnEnemy('turret', 4); spawnEnemy('turret', -4); darterStack([11, 5, -1, -7, -12, 8]); } },
+  { t: 76,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); orbiterPair(7); orbiterPair(-7); droneWave(6, 0, 12, 220); } },
+  { t: 81,   fn: () => bossWarning('c_warning6',
+      "Energy spike in the debris core... the wrecks are... ASSEMBLING?! Kamus — the yard itself is coming for you!") },
+  { t: 86,   fn: bossArrive },
+];
+
+function phantoms(ys) {
+  ys.forEach((y, i) =>
+    setTimeout(() => { if (state === 'playing') spawnEnemy('phantom', y); }, i * 500));
+}
+function splitters(ys) {
+  ys.forEach((y, i) =>
+    setTimeout(() => { if (state === 'playing') spawnEnemy('splitter', y, { phase: i * 1.1 }); }, i * 400));
+}
+function eggs(ys) {
+  ys.forEach((y, i) =>
+    setTimeout(() => { if (state === 'playing') spawnEnemy('egg', y); }, i * 350));
+}
+
+const TIMELINE7 = [
+  { t: 0.5,  fn: () => say('commander',
+      "I don't like this shortcut, Kamus. Zeraa's intel has been... convenient. Eyes open in there.", 'c_briefing7', 3.5) },
+  { t: 3.5,  fn: () => say('kamus', 'A glowing space highway. Sure. What could possibly go wrong.', 'k_stage7', 3) },
+  { t: 6,    fn: () => droneWave(6, 5, 5) },
+  { t: 10,   fn: () => darterStack([9, 3, -3, -9]) },
+  { t: 14,   fn: () => { weaverWall([8, -8]); splitters([4, -4]); } },
+  { t: 19,   fn: () => phantoms([6, -6]) },
+  { t: 24,   fn: () => { spawnEnemy('lancer', 7); spawnEnemy('lancer', -7); } },
+  { t: 29,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); droneWave(5, -8, 4); } },
+  { t: 34,   fn: () => { splitters([8, 0, -8]); mineRow([6, -6]); } },
+  // ------- the betrayal -------
+  { t: 40,   fn: () => say('zeraa',
+      'You were magnificent, darling. Truly. But the Velvet Nebula fell to the Gorgon long ago... and I am what survival looks like.', 'z_betray', 4.5) },
+  { t: 44.5, fn: () => say('kamus', 'Zeraa...?! The intel, the shortcuts — it was YOU. All of it.', 'k_betray', 3.5) },
+  { t: 46,   fn: () => phantoms([8, 0, -8]) },
+  { t: 49,   fn: () => say('vex', 'She sings so sweetly, does she not? Welcome to your funeral procession, little pilot.', 'v_gloat', 3.5) },
+  { t: 50,   fn: () => { spawnEnemy('lancer', 5); spawnEnemy('lancer', -5); darterStack([10, -10]); } },
+  { t: 53,   fn: () => say('commander', "Kamus, punch through! That's an ORDER! We are not losing you to that snake's honey trap!", 'c_rage', 3.5) },
+  { t: 55,   fn: () => { spawnEnemy('heavy', -3, { drops: true }); splitters([6, -6]); } },
+  { t: 61,   fn: () => { phantoms([7, -7]); weaverWall([3, -3]); mineRow([9, 0, -9]); } },
+  { t: 67,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('lancer', 0); spawnEnemy('lancer', -8); } },
+  { t: 72,   fn: () => { droneWave(10, 0, 10, 240); splitters([5, -5]); } },
+  { t: 77,   fn: () => { phantoms([9, 2, -6]); spawnEnemy('heavy', 4, { drops: true }); } },
+  { t: 81,   fn: () => bossWarning('c_warning7',
+      "Her ship just entered the conduit — she's coming to finish it herself. Kamus... make her regret it.") },
+  { t: 86,   fn: bossArrive },
+];
+
+const TIMELINE8 = [
+  { t: 0.5,  fn: () => say('commander',
+      "The Ghost Nebula, Kamus. A dead zone — our sensors are blind in there and comms will come and go. You're on your own.", 'c_briefing8', 4) },
+  { t: 4,    fn: () => say('kamus', 'Blind sensors, ghost stories, glowing fog. Love it. Going in.', 'k_stage8', 3) },
+  { t: 6,    fn: () => droneWave(6, 4, 5) },
+  { t: 10,   fn: () => phantoms([7, -7]) },
+  { t: 14,   fn: () => { weaverWall([8, -8]); splitters([3, -3]); } },
+  { t: 18,   fn: () => say('klorp', 'Fascinating! The fog refracts their cloaking fields — trust your EYES, pilot, not the radar!', 'd_ghost', 3.5) },
+  { t: 19,   fn: () => phantoms([9, 0, -9]) },
+  { t: 24,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); darterStack([10, -10]); } },
+  { t: 29,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); phantoms([5, -5]); } },
+  { t: 35,   fn: () => { orbiterPair(7); orbiterPair(-7); splitters([8, 0, -8]); } },
+  { t: 41,   fn: () => { mineRow([9, 0, -9]); phantoms([6, -6]); weaverWall([2, -2]); } },
+  { t: 47,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('lancer', 0); spawnEnemy('lancer', -8); } },
+  { t: 53,   fn: () => { spawnEnemy('heavy', -4); spawnEnemy('heavy', 6, { drops: true }); phantoms([8, -8]); } },
+  { t: 59,   fn: () => { droneWave(10, 0, 11, 240); splitters([5, -5]); } },
+  { t: 65,   fn: () => phantoms([10, 4, -4, -10]) },
+  { t: 71,   fn: () => { spawnEnemy('lancer', 5); spawnEnemy('lancer', -5); weaverWall([9, -9]); mineRow([6, -6]); } },
+  { t: 76,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); phantoms([7, 0, -7]); } },
+  { t: 81,   fn: () => bossWarning('c_warning8',
+      "Contact! Single fighter signature... Kamus, telemetry says it's YOUR ship. Twice.") },
+  { t: 86,   fn: bossArrive },
+];
+
+const TIMELINE9 = [
+  { t: 0.5,  fn: () => say('commander',
+      'This is it, Kamus. The brood-hive. Every drone that ever shot at you hatched in there. Burn it out, and the swarm dies with it.', 'c_briefing9', 4) },
+  { t: 4,    fn: () => say('kamus', "Into the belly of the beast. If I don't make it back... someone feed my sock.", 'k_stage9', 3) },
+  { t: 6,    fn: () => droneWave(8, 0, 8, 300) },
+  { t: 10,   fn: () => eggs([8, -8]) },
+  { t: 11,   fn: () => say('klorp', 'Egg clusters! They hatch FASTER when agitated — pop them QUICKLY, pilot!', 'd_hive', 3) },
+  { t: 15,   fn: () => { droneWave(6, 5, 6); splitters([3, -3]); } },
+  { t: 20,   fn: () => { eggs([10, 0, -10]); weaverWall([6, -6]); } },
+  { t: 26,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); droneWave(6, -6, 5); } },
+  { t: 31,   fn: () => { darterStack([10, 4, -2, -8, -12]); eggs([5, -5]); } },
+  { t: 36,   fn: () => phantoms([7, -7]) },
+  { t: 41,   fn: () => { eggs([9, 3, -3, -9]); splitters([6, 0, -6]); } },
+  { t: 47,   fn: () => say('vex',
+      'Those are my CHILDREN, little pilot. When the Queen is done with you, I will pick my teeth with your wings.', 'v_fury', 3.5) },
+  { t: 48,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); droneWave(8, 0, 9, 260); } },
+  { t: 54,   fn: () => { eggs([8, -8]); spawnEnemy('heavy', -3, { drops: true }); weaverWall([4, -4]); } },
+  { t: 60,   fn: () => { droneWave(12, 0, 11, 220); splitters([7, -7]); } },
+  { t: 66,   fn: () => { eggs([10, 0, -10]); darterStack([9, 3, -3, -9]); } },
+  { t: 72,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); phantoms([6, -6]); droneWave(6, 0, 10, 260); } },
+  { t: 77,   fn: () => { eggs([6, -6]); splitters([2, -2]); } },
+  { t: 81,   fn: () => bossWarning('c_warning9',
+      "The hive's heart is just ahead... Massive biosign. Kamus — the QUEEN is coming to meet you.") },
+  { t: 86,   fn: bossArrive },
+];
+
+const TIMELINE10 = [
+  { t: 0.5,  fn: () => say('commander',
+      'Vex emptied every dock he has left — the armada is between you and home. And Kamus? The Argo is done hiding. We are coming WITH you.', 'c_briefing10', 4.5) },
+  { t: 4.5,  fn: () => say('kamus', 'The whole armada versus me and my sock... and the Argo. Alright. Let\'s dance.', 'k_stage10', 3) },
+  { t: 7,    fn: () => { droneWave(6, 4, 5); darterStack([9, -9]); } },
+  { t: 12,   fn: () => say('nova', "Argo broadside inbound on your six — duck or dance, flyboy!", 'n_argo', 2.5) },
+  { t: 13.5, fn: argoVolley },
+  { t: 15,   fn: () => { spawnEnemy('cruiser', 5); weaverWall([9, -9]); } },
+  { t: 21,   fn: () => { raiders(4); splitters([4, -4]); } },
+  { t: 26,   fn: () => { spawnEnemy('cruiser', -6); spawnEnemy('heavy', 6, { drops: true }); } },
+  { t: 32,   fn: () => { phantoms([7, -7]); darterStack([11, 5, -5, -11]); } },
+  { t: 36,   fn: argoVolley },
+  { t: 38,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); droneWave(6, 0, 8); } },
+  { t: 45,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); mineRow([8, 0, -8]); } },
+  { t: 50,   fn: () => say('vex', 'You burn my children... and dare approach MY fleet? Come then, little pilot. Come DIE at scale.', 'v_taunt10', 4) },
+  { t: 52,   fn: () => { spawnEnemy('cruiser', 0); spawnEnemy('heavy', -8, { drops: true }); weaverWall([10, -10]); } },
+  { t: 58,   fn: argoVolley },
+  { t: 59,   fn: () => { raiders(5); splitters([6, 0, -6]); } },
+  { t: 65,   fn: () => { spawnEnemy('cruiser', 7); spawnEnemy('cruiser', -7); phantoms([3, -3]); } },
+  { t: 70,   fn: () => { say('zeraa', 'Missed me, darling? Duck.', 'z_assist', 2); zeraaRun(); } },
+  { t: 72,   fn: () => { droneWave(10, 0, 10, 240); darterStack([8, 2, -4, -10]); } },
+  { t: 77,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); spawnEnemy('cruiser', -4); argoVolley(); } },
+  { t: 81,   fn: () => bossWarning('c_warning10',
+      'The flagship is breaking formation... the CHROME FANG. Vex is aboard, Kamus. End this war.') },
+  { t: 86,   fn: bossArrive },
+];
+
+const TIMELINE11 = [
+  { t: 0.5,  fn: () => say('commander',
+      "Vex's homeworld, Kamus. Obsidian towers, royal guard, and a theater shield over the palace itself. We'll worry about the shield when you reach it.", 'c_briefing11', 4.5) },
+  { t: 4.5,  fn: () => say('kamus', 'Knock knock, your majesty. Housecall.', 'k_stage11', 2.5) },
+  { t: 7,    fn: () => { tankRow([8, -8]); droneWave(5, 3, 5); } },
+  { t: 12,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); burrowers([3, -3], 0.45); } },
+  { t: 17,   fn: () => say('vex', 'You walk on MY soil now, little pilot. Every stone here has orders to kill you.', 'v_palace', 3.5) },
+  { t: 18,   fn: () => { weaverWall([9, -9]); tankRow([11, 4, -4, -11]); } },
+  { t: 24,   fn: () => { raiders(4); phantoms([5, -5]); } },
+  { t: 29,   fn: () => { spawnEnemy('cruiser', 5); spawnEnemy('heavy', -6, { drops: true }); } },
+  { t: 35,   fn: () => { burrowers([8, 0, -8], 0.35); splitters([4, -4]); mineRow([10, -10]); } },
+  // ------- the shield gate -------
+  { t: 41,   fn: () => {
+      document.getElementById('warning').classList.add('on');
+      say('commander', "There it is — the theater shield. Our guns can't crack it, Kamus. We can't follow you past this point—", 'c_shield', 3.5);
+    } },
+  { t: 45.5, fn: () => {
+      document.getElementById('warning').classList.remove('on');
+      say('zeraa', 'But I still know the palace codes, darling... There. The gate is open. Bring it down on his head.', 'z_gate', 3.5);
+      showMsg('THEATER SHIELD DOWN — PALACE OPEN', 2.5);
+      audio.powerup();
+    } },
+  { t: 49,   fn: () => { tankRow([9, 0, -9]); spawnEnemy('lancer', 7); spawnEnemy('lancer', -7); } },
+  { t: 55,   fn: () => { spawnEnemy('cruiser', -4); weaverWall([6, -6]); burrowers([5, -5], 0.5); } },
+  { t: 61,   fn: () => { phantoms([8, 0, -8]); raiders(4); } },
+  { t: 67,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); tankRow([12, 6, -6, -12]); } },
+  { t: 73,   fn: () => { droneWave(10, 0, 10, 240); splitters([7, -7]); mineRow([8, 0, -8]); } },
+  { t: 78,   fn: () => { spawnEnemy('cruiser', 6); spawnEnemy('cruiser', -6); burrowers([2, -2], 0.4); } },
+  { t: 82,   fn: () => bossWarning('c_warning11',
+      'The palace doors are opening... something is WALKING out. Kamus — the throne room came to YOU.') },
+  { t: 87,   fn: bossArrive },
+];
+
+// THE FINALE — three acts, three camera modes:
+// over the fortress (top-down) -> down the core shaft (rail) -> the heart (side)
+const TIMELINE12 = [
+  { t: 0.5,  fn: () => say('commander',
+      'There it is, Kamus. The Gorgon core — a fortress the size of a moon, and Vex is somewhere inside becoming... something. Everything we have is behind you.', 'c_briefing12', 5) },
+  { t: 5,    fn: () => say('kamus', "One moon-sized death fortress. Sock's lucky, guns are hot. Let's write the ending.", 'k_stage12', 3) },
+  { t: 7,    fn: () => { tankRow([9, -9]); weaverWall([5, -5]); } },
+  { t: 12,   fn: () => { spawnEnemy('cruiser', 6); raiders(4); } },
+  { t: 17,   fn: () => { tankRow([12, 4, -4, -12]); spawnEnemy('lancer', 0); } },
+  { t: 22,   fn: () => { spawnEnemy('heavy', -5, { drops: true }); burrowers([6, -6], 0.45); } },
+  { t: 27,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); weaverWall([2, -2]); } },
+  { t: 31,   fn: () => { tankRow([8, -8]); raiders(3); } },
+  { t: 33,   fn: () => say('commander', "The intake shaft is open — Zeraa's codes, one last time. DIVE, Kamus. Straight down its throat!", 'c_dive', 3.5) },
+  { t: 36,   fn: () => {
+      switchView('rail', { groundColor: 0x241016, fogFar: 260, fogColor: 0x120608,
+        railColors: { a: 0xff4040, b: 0x8040ff, arch: 0x802030 } });
+      showBanner('THE CORE SHAFT', 3);
+    } },
+  { t: 38,   fn: () => droneWave(6, 3, 5) },
+  { t: 42,   fn: () => { splitters([5, -5]); mineRow([8, 0, -8]); } },
+  { t: 47,   fn: () => phantoms([7, 0, -7]) },
+  { t: 52,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); droneWave(6, -4, 6); } },
+  { t: 57,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); splitters([8, -8]); } },
+  { t: 62,   fn: () => { phantoms([5, -5]); mineRow([6, -6]); droneWave(8, 0, 9, 260); } },
+  { t: 67,   fn: () => say('kamus', "I can see it. The heart. It's... it's looking at me.", 'k_core', 3) },
+  { t: 70,   fn: () => {
+      switchView('side');
+      showBanner('THE HEART OF THE GORGON', 3);
+    } },
+  { t: 72,   fn: () => { phantoms([6, -6]); spawnEnemy('cruiser', 0); } },
+  { t: 76,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); splitters([3, -3]); } },
+  { t: 81,   fn: () => bossWarning('c_warning12',
+      "Everything he has left is in that chamber, Kamus. And everything WE have is with you. All of us. GO.") },
+  { t: 86,   fn: bossArrive },
+];
+
 const STAGES = [
   {
     name: 'STAGE 1 — SECTOR 7 APPROACH', place: 'SECTOR 7',
@@ -1576,7 +3778,10 @@ const STAGES = [
     bossName: 'GORGON VORTEX - DREAD CARRIER',
     timeline: TIMELINE1, ambient: null, makeBoss: makeCarrier,
     theme: { planet: 0x7040a0, planetEm: 0x1a0a30, ring: 0xc0a0ff },
-    clearSay: () => say('kamus', 'Carrier down! Sector Seven is breathing again.', 'k_clear1', 3),
+    clearSay: () => {
+      say('kamus', 'Carrier down! Sector Seven is breathing again.', 'k_clear1', 3);
+      say('vex', 'You have swatted a single fly, little pilot. The Gorgon has teeth yet.', 'v_taunt1', 3);
+    },
   },
   {
     name: 'STAGE 2 — THE SHATTERED BELT', place: 'THE SHATTERED BELT',
@@ -1596,11 +3801,98 @@ const STAGES = [
   },
   {
     name: 'STAGE 4 — COMING HOME TO TROUBLE', place: 'THE HOMEWORLD',
-    view: 'top',
+    view: 'top', groundColor: 0x2e5c30,
     song: 'level4', bossSong: 'boss4',
     bossName: 'HARVESTER TYRANT - WORLD EATER',
     timeline: TIMELINE4, ambient: null, makeBoss: makeHarvester,
     theme: { planet: 0x2e5c30, planetEm: 0x0a2010, ring: 0x88c090 },
+    clearSay: () => say('kamus', "Capital's safe... but the diggers are retreating up the Red Canyon. Oh no you don't.", 'k_clear4', 3.5),
+  },
+  {
+    name: 'STAGE 5 — CANYON RUN', place: 'THE RED CANYON',
+    view: 'top', canyon: true, groundColor: 0x7a4530,
+    song: 'level5', bossSong: 'boss5',
+    bossName: 'DRILLMAW - CANYON TERROR',
+    timeline: TIMELINE5, ambient: null, makeBoss: makeDrillmaw,
+    theme: { planet: 0x8a4520, planetEm: 0x2a1206, ring: 0xcc8866 },
+    clearSay: () => say('kamus', "Drillmaw's a fossil. Command... please tell me that was the last of them.", 'k_clear5', 3),
+  },
+  {
+    name: 'STAGE 6 — ORBITAL JUNKYARD', place: 'THE ORBITAL JUNKYARD',
+    song: 'level6', bossSong: 'boss6',
+    bossName: 'SCRAP COLOSSUS - GRAVE GOLEM',
+    timeline: TIMELINE6, ambient: junkAmbient, makeBoss: makeColossus,
+    theme: { planet: 0x606a78, planetEm: 0x161a20, ring: 0x9aa8b8 },
+    clearSay: () => {
+      say('kamus', "Scrap that. Literally. Command, I'm running on fumes — is there a fast lane home?", 'k_clear6', 3);
+      say('zeraa', 'There is, darling — the Velvet Passage. An old warp conduit. It will cut your journey to nothing. Trust me.', 'z_passage', 3.5);
+    },
+  },
+  {
+    name: 'STAGE 7 — THE VELVET PASSAGE', place: 'THE VELVET PASSAGE',
+    view: 'rail', groundColor: 0x241a45,
+    song: 'level7', bossSong: 'boss7',
+    bossName: "SIREN CHARIOT - ZERAA'S VEIL",
+    timeline: TIMELINE7, ambient: null, makeBoss: makeSiren,
+    theme: { planet: 0x3a2a6a, planetEm: 0x100a24, ring: 0xb090ff },
+    clearSay: () => {
+      say('kamus', "Track's clear. Command... she played me. She played ALL of us.", 'k_clear7', 3);
+      say('commander', "Then we make her regret it. Come home through the Ghost Nebula — the swarm won't follow you in there.", 'c_steel', 3.5);
+    },
+  },
+  {
+    name: 'STAGE 8 — NEBULA OF GHOSTS', place: 'THE GHOST NEBULA',
+    song: 'level8', bossSong: 'boss8',
+    bossName: 'MIRROR KAMUS - GORGON REPLICA',
+    fogFar: 120, fogColor: 0x0e1a14,
+    timeline: TIMELINE8, ambient: null, makeBoss: makeMirror,
+    theme: { planet: 0x4a6a58, planetEm: 0x122018, ring: 0x9adbb8 },
+    clearSay: () => {
+      say('kamus', "Scratch one knockoff. Command, I'm done playing defense — where's the NEST?", 'k_clear8', 3);
+      say('commander', 'The nebula gave us more than cover — we mapped their brood-hive. Rest up, pilot. Tomorrow we end the swarm at its source.', 'c_map', 4);
+    },
+  },
+  {
+    name: 'STAGE 9 — HIVE DESCENT', place: 'THE BROOD-HIVE',
+    view: 'rail', groundColor: 0x3a1418,
+    railColors: { a: 0xd8c8a0, b: 0xff8040, arch: 0xaa4030 },
+    fogFar: 240, fogColor: 0x140806,
+    song: 'level9', bossSong: 'boss9',
+    bossName: 'BROOD QUEEN - MOTHER OF THE SWARM',
+    timeline: TIMELINE9, ambient: null, makeBoss: makeQueen,
+    theme: { planet: 0x6a3040, planetEm: 0x200a10, ring: 0xc08070 },
+    clearSay: () => say('kamus', "The nest is ash. No more hatchlings, no more swarm... Now there's just HIM.", 'k_clear9', 3),
+  },
+  {
+    name: 'STAGE 10 — THE VEX ARMADA', place: 'THE VEX ARMADA',
+    fleet: true,
+    song: 'level10', bossSong: 'boss10',
+    bossName: "CHROME FANG - VEX'S FLAGSHIP",
+    timeline: TIMELINE10, ambient: null, makeBoss: makeChromeFang,
+    theme: { planet: 0x4a1a2a, planetEm: 0x180810, ring: 0xff6060 },
+    clearSay: () => say('kamus', "The Fang is down and the armada's scattering. One palace left, Vex. Keep the throne warm.", 'k_clear10', 3.5),
+  },
+  {
+    name: 'STAGE 11 — PALACE ASSAULT', place: "VEX'S PALACE",
+    view: 'top', groundColor: 0x1a1024,
+    song: 'level11', bossSong: 'boss11',
+    bossName: "SERPENT THRONE - VEX'S WALKER",
+    timeline: TIMELINE11, ambient: null, makeBoss: makeThrone,
+    theme: { planet: 0x2a1a3a, planetEm: 0x0e0816, ring: 0x8060c0 },
+    clearSay: () => say('kamus', "The throne is scrap, and whatever's left of him crawled into that core. One more flight. Let's end the war.", 'k_clear11', 3.5),
+  },
+  {
+    name: 'FINAL STAGE — HEART OF THE GORGON', place: 'THE GORGON CORE',
+    view: 'top', groundColor: 0x1c1420,
+    song: 'level12', bossSong: 'boss12',
+    bossName: 'VEX ETERNAL',
+    timeline: TIMELINE12, ambient: null, makeBoss: makeVexFinal,
+    theme: { planet: 0x3a1020, planetEm: 0x160408, ring: 0xff4040 },
+    victorySay: () => {
+      say('zeraa', 'Takes more than a star to kill a diva, darling. See you at dinner.', 'z_alive', 3);
+      say('kamus', 'World Eater eaten. The homeworld is safe... NOW somebody owes me dinner.', 'k_home', 3.5);
+      say('commander', "Confirmed kill... the belt is clear. Outstanding flying, Kamus. Come home — dinner's on me.", 'c_victory', 4);
+    },
   },
 ];
 
@@ -1625,32 +3917,56 @@ window.addEventListener('pointerdown', () => {
 });
 
 let padStartPrev = false;
+let padFirePrev = false;
 function readInput() {
-  let x = 0, y = 0, fire = false, start = false;
+  let x = 0, y = 0, fire = false, start = false, padFire = false;
   if (keys['ArrowLeft'] || keys['KeyA']) x -= 1;
   if (keys['ArrowRight'] || keys['KeyD']) x += 1;
   if (keys['ArrowUp'] || keys['KeyW']) y += 1;
   if (keys['ArrowDown'] || keys['KeyS']) y -= 1;
   if (keys['Space'] || keys['KeyZ']) fire = true;
 
+  // read EVERY connected pad (Windows/Bluetooth Xbox pads sometimes leave a
+  // ghost entry in slot 0, so never trust just the first one) and tolerate
+  // non-"standard" mappings where the dpad shows up as axes 6/7 or a hat axis
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   for (const pad of pads) {
     if (!pad || !pad.connected) continue;
     const dz = 0.22;
-    if (Math.abs(pad.axes[0]) > dz) x += pad.axes[0];
-    if (Math.abs(pad.axes[1]) > dz) y -= pad.axes[1];
-    if (pad.buttons[14] && pad.buttons[14].pressed) x -= 1; // dpad
-    if (pad.buttons[15] && pad.buttons[15].pressed) x += 1;
-    if (pad.buttons[12] && pad.buttons[12].pressed) y += 1;
-    if (pad.buttons[13] && pad.buttons[13].pressed) y -= 1;
-    for (const bi of [0, 1, 2, 7]) // A B X RT
-      if (pad.buttons[bi] && pad.buttons[bi].pressed) fire = true;
-    if (pad.buttons[9] && pad.buttons[9].pressed) start = true;
-    break;
+    const ax = pad.axes || [];
+    const btn = (i) => !!(pad.buttons && pad.buttons[i] && pad.buttons[i].pressed);
+    if (ax.length > 1) {
+      if (Math.abs(ax[0]) > dz) x += ax[0];
+      if (Math.abs(ax[1]) > dz) y -= ax[1];
+    }
+    if (pad.mapping !== 'standard') {
+      if (ax.length > 7) { // dpad exposed as a pair of digital axes
+        if (Math.abs(ax[6]) > 0.5) x += Math.sign(ax[6]);
+        if (Math.abs(ax[7]) > 0.5) y -= Math.sign(ax[7]);
+      }
+      if (ax.length > 9 && ax[9] >= -1 && ax[9] <= 1) { // dpad as an 8-way hat
+        const h = Math.round((ax[9] + 1) / (2 / 7));
+        if (h >= 0 && h <= 7) {
+          if (h === 7 || h === 0 || h === 1) y += 1;
+          if (h >= 3 && h <= 5) y -= 1;
+          if (h >= 1 && h <= 3) x += 1;
+          if (h >= 5 && h <= 7) x -= 1;
+        }
+      }
+    }
+    if (btn(14)) x -= 1; // dpad buttons (standard mapping)
+    if (btn(15)) x += 1;
+    if (btn(12)) y += 1;
+    if (btn(13)) y -= 1;
+    for (const bi of [0, 1, 2, 3, 4, 5, 6, 7]) // face buttons, bumpers, triggers
+      if (btn(bi)) { fire = true; padFire = true; }
+    if (btn(9) || btn(8)) start = true; // menu / view
   }
   const startEdge = start && !padStartPrev;
   padStartPrev = start;
-  return { x: THREE.MathUtils.clamp(x, -1, 1), y: THREE.MathUtils.clamp(y, -1, 1), fire, startEdge };
+  const fireEdge = padFire && !padFirePrev;
+  padFirePrev = padFire;
+  return { x: THREE.MathUtils.clamp(x, -1, 1), y: THREE.MathUtils.clamp(y, -1, 1), fire, startEdge, fireEdge };
 }
 
 function rumble(strong, weak, ms) {
@@ -1679,7 +3995,9 @@ function addScore(n) {
 }
 function updateLivesHud() {
   el('lives').innerHTML = '&#9650;'.repeat(Math.max(0, player.lives));
-  el('power').innerHTML = 'PWR&nbsp;' + '&#9646;'.repeat(player.weapon);
+  el('power').innerHTML = 'PWR&nbsp;' + '&#9646;'.repeat(player.weapon) +
+    '&#9670;'.repeat(player.options) +
+    (player.shield ? '&nbsp;&#9678;' : '');
 }
 
 let msgTimer = 0;
@@ -1758,24 +4076,106 @@ const CMDR_ROWS = [
 ];
 const CMDR_CMAP = { C: '#24334a', c: '#3b4d68', y: '#ffc23e', s: '#d9a97e', w: '#cfd6dd', d: '#0a1420', u: '#2a3a55', e: '#142030' };
 
-// pixel fallbacks now; real anime portraits (assets/portraits/*.png) take over if present
+// supporting cast pixel fallbacks (film characters)
+const NOVA_ROWS = [
+  '...dhhhhhhhd....',
+  '..dhhhhhhhhhd...',
+  '.dhhrrrrrrrhhd..',
+  '.dhrrrrrrrrrhd..',
+  '.dhhsssssssshd..',
+  '.dhsseesseeshd..',
+  '.dhhssssssssd...',
+  '..dhssddddssd...',
+  '..ddssssssssd...',
+  '...dsssssssd....',
+  '...dwwwwwwwwd...',
+  '..dowwwwwwood...',
+  '..doooooooood...',
+  '.ddoooooooood...',
+];
+const NOVA_CMAP = { h: '#2a1a12', r: '#cc2233', s: '#d9a06a', e: '#181410', w: '#f0e8e0', o: '#e07020', d: '#0a1420' };
+const ZERAA_ROWS = [
+  '..p..dSSSSd..p..',
+  '..dpdSSSSSSdpd..',
+  '...dSSSSSSSSd...',
+  '..dSttttttttSd..',
+  '..dSttttttttSd..',
+  '..dttyttttyttd..',
+  '..dttttttttttd..',
+  '..dtttddddtttd..',
+  '...dttttttttd...',
+  '....dttttttd....',
+  '....duuuuuud....',
+  '...duuuuuuuud...',
+  '..dduuuuuuuudd..',
+  '..duuuuuuuuuud..',
+];
+const ZERAA_CMAP = { S: '#d8dce8', t: '#38c8c0', y: '#ffd040', p: '#ff70d8', u: '#c0c8dc', d: '#0a1420' };
+const KLORP_ROWS = [
+  '..y..........y..',
+  '..dy........yd..',
+  '...db......bd...',
+  '...dbbbbbbbbd...',
+  '..dbbbbbbbbbbd..',
+  '..dbBbbbbbbBbd..',
+  '..dbbbbbbbbbbd..',
+  '..dbbBBBBBBbbd..',
+  '...dbbbbbbbbd...',
+  '..dwwbbbbbbwwd..',
+  '..dwwbbbbbbwwd..',
+  '..dwwdbbbbdwwd..',
+  '...dwwddddwwd...',
+  '...dwwwwwwwwd...',
+  '..ddwwwwwwwwdd..',
+];
+const KLORP_CMAP = { b: '#7a2030', B: '#4a1420', y: '#ffe080', w: '#e8ecf0', d: '#0a1420' };
+const VEX_ROWS = [
+  '....dkkkkkkd....',
+  '...dkkkkkkkkd...',
+  '..dkkmmmmmmkkd..',
+  '..dkmmmmmmmmkd..',
+  '..dkmmRRmmmmkd..',
+  '..dkmmmmmmmmkd..',
+  '..dkmmkkkkmmkd..',
+  '..dkkmmmmmmkkd..',
+  '...dkkkkkkkkd...',
+  '..dpkkkkkkkkpd..',
+  '..dppkkkkkkppd..',
+  '..dpkkkkkkkkpd..',
+  '.ddppppppppppd..',
+  '.dppppppppppppd.',
+];
+const VEX_CMAP = { k: '#181c24', m: '#c8ccd4', R: '#ff2020', p: '#5a2080', d: '#0a1420' };
+
+// pixel fallbacks now; real anime portraits (assets/portraits/<who>.png) take over if present
 const portraitSrc = {
   kamus: pixelDataURL(KAMUS_ROWS, KAMUS_CMAP),
   commander: pixelDataURL(CMDR_ROWS, CMDR_CMAP),
+  nova: pixelDataURL(NOVA_ROWS, NOVA_CMAP),
+  zeraa: pixelDataURL(ZERAA_ROWS, ZERAA_CMAP),
+  klorp: pixelDataURL(KLORP_ROWS, KLORP_CMAP),
+  vex: pixelDataURL(VEX_ROWS, VEX_CMAP),
 };
-for (const who of ['kamus', 'commander']) {
+// the HUD avatar shows the same Kamus portrait the comm box uses
+const avatarEl = el('avatar');
+avatarEl.src = portraitSrc.kamus;
+for (const who of Object.keys(portraitSrc)) {
   const probe = new Image();
-  probe.onload = () => { portraitSrc[who] = probe.src; };
+  probe.onload = () => {
+    portraitSrc[who] = probe.src;
+    if (who === 'kamus') avatarEl.src = probe.src;
+  };
   probe.src = 'assets/portraits/' + who + '.png';
 }
 
-// HUD avatar
-drawPixels(el('avatar').getContext('2d'), KAMUS_ROWS, KAMUS_CMAP);
-
 // ---------------------------------------------------------------- voice comms
-const COMM_NAMES = {
-  kamus: 'LT. KAMUS — FIGHTER SF-01',
-  commander: 'COMMANDER — CV ARGO',
+const COMM_CHARS = {
+  kamus:     { name: 'LT. KAMUS — FIGHTER SF-01',   color: '#3ee6ff', pitch: 400 },
+  commander: { name: 'COMMANDER — CV ARGO',          color: '#ffc23e', pitch: 210 },
+  nova:      { name: 'NOVA VASQUEZ — HANGAR CHIEF',  color: '#ff7040', pitch: 470 },
+  zeraa:     { name: 'AMB. ZERAA — VELVET NEBULA',   color: '#ff70d8', pitch: 520 },
+  klorp:     { name: 'DR. KLORP — SCIENCE OFFICER',  color: '#57ff8a', pitch: 320 },
+  vex:       { name: 'ADM. VEX — GORGON SWARM',      color: '#ff3030', pitch: 150 },
 };
 const commQ = [];
 let comm = null;
@@ -1798,17 +4198,24 @@ function updateComms(dt) {
     return;
   }
   if (!comm && commQ.length) {
+    // if a previous line is still speaking (e.g. across a stage transition),
+    // hold the queue instead of talking over it
+    if (audio.activeVoices > 0) return;
     comm = commQ.shift();
     comm.t = 0;
     comm.shown = 0;
     const vDur = comm.vid ? audio.playVoice(comm.vid) : 0;
     comm.voiced = vDur > 0;
     comm.dur = Math.max(comm.minDur, vDur + 0.6, comm.text.length / 26 + 1.3);
+    const ch = COMM_CHARS[comm.who] || COMM_CHARS.kamus;
     const box = el('comm');
     box.classList.add('on');
-    box.classList.toggle('commander', comm.who === 'commander');
-    el('comm-name').textContent = COMM_NAMES[comm.who];
-    el('comm-portrait').src = portraitSrc[comm.who];
+    box.style.borderColor = ch.color;
+    box.style.boxShadow = '0 0 16px ' + ch.color + '55';
+    const nameEl = el('comm-name');
+    nameEl.textContent = ch.name;
+    nameEl.style.color = ch.color;
+    el('comm-portrait').src = portraitSrc[comm.who] || portraitSrc.kamus;
     el('comm-text').textContent = '';
     audio.radio();
   }
@@ -1819,7 +4226,7 @@ function updateComms(dt) {
       comm.shown = chars;
       el('comm-text').textContent = comm.text.slice(0, chars);
       if (!comm.voiced && chars % 3 === 0 && chars < comm.text.length)
-        audio.talk(comm.who === 'commander' ? 210 : 400);
+        audio.talk((COMM_CHARS[comm.who] || COMM_CHARS.kamus).pitch);
     }
     if (comm.t >= comm.dur) closeComm();
   }
@@ -1850,6 +4257,7 @@ function menuAdvance() {
 
 function toTitle() {
   cleanupField();
+  audio.stopVoices();
   applyViewMode('side');
   ship.rotation.set(0, 0, 0);
   state = 'title';
@@ -1861,7 +4269,10 @@ function toTitle() {
   if (audioStarted) audio.playSong('title');
 }
 
-function startGame() { startStage(0, true); }
+function startGame() {
+  audio.stopVoices();
+  startStage(0, true);
+}
 
 function startStage(i, fresh) {
   cleanupField();
@@ -1877,7 +4288,11 @@ function startStage(i, fresh) {
     score = 0;
     player.lives = 3;
     player.weapon = 1;
+    player.shield = false;
+    player.options = 0;
     saidPower = false;
+    saidShield = false;
+    saidOrbital = false;
   }
   player.alive = true;
   player.invuln = 2.5;
@@ -1892,6 +4307,31 @@ function startStage(i, fresh) {
   planetBallMat.color.setHex(st.theme.planet);
   planetBallMat.emissive.setHex(st.theme.planetEm);
   planetRingMat.color.setHex(st.theme.ring);
+  if (st.view === 'top' || st.view === 'rail')
+    grassMatRef.color.setHex(st.groundColor || 0x2e5c30);
+  canyonGroup.visible = st.view === 'top' && !!st.canyon;
+  if (canyonGroup.visible) {
+    const cw = canyonWallY();
+    for (const w of canyonWalls) {
+      w.position.y = w.userData.side * cw;
+      w.position.x = w.userData.seg * 260;
+    }
+  }
+  railGroup.visible = st.view === 'rail';
+  if (railGroup.visible) {
+    railSegs.forEach((s, i) => { s.position.x = i * 260; });
+    const rc = st.railColors || { a: 0x3ee6ff, b: 0xff4bd8, arch: 0x60d0ff };
+    railMats.a.color.setHex(rc.a);
+    railMats.b.color.setHex(rc.b);
+    railMats.arch.color.setHex(rc.arch);
+  }
+  for (const tile of groundTiles) // city/trees hidden on the energy highway
+    for (const d of tile.userData.deco) d.visible = st.view !== 'rail';
+  if (st.fogFar) scene.fog.far = st.fogFar;      // e.g. the Ghost Nebula closes in
+  if (st.fogColor) scene.fog.color.setHex(st.fogColor);
+  fleetGroup.visible = !!st.fleet;
+  zeraaRunT = -1;
+  zeraaDart.visible = false;
   showBanner(st.name);
   addScore(0);
   updateLivesHud();
@@ -1927,6 +4367,17 @@ function togglePause() {
 
 function playerDie() {
   if (!player.alive || player.invuln > 0) return;
+  if (player.shield) { // the bubble eats one hit
+    player.shield = false;
+    updateLivesHud();
+    burst(player.pos, 14, 18, 0.9);
+    audio.explode();
+    rumble(0.5, 0.3, 200);
+    shake = Math.max(shake, 0.5);
+    player.invuln = 1.5;
+    showMsg('SHIELD DOWN!', 1.5);
+    return;
+  }
   player.alive = false;
   ship.visible = false;
   burst(player.pos, 30, 24, 1.3);
@@ -1972,12 +4423,16 @@ function stageClear() {
     const next = stageIdx + 1;
     setTimeout(() => {
       if (state === 'clear') startStage(next, false);
-    }, 6500);
+    }, 8000); // long enough for the clear comm line to finish speaking
   } else {
     state = 'victory';
     audio.playSong('victory');
-    say('kamus', 'World Eater eaten. The homeworld is safe... NOW somebody owes me dinner.', 'k_home', 3.5);
-    say('commander', "Confirmed kill... the belt is clear. Outstanding flying, Kamus. Come home — dinner's on me.", 'c_victory', 4);
+    if (STAGES[stageIdx].victorySay) {
+      STAGES[stageIdx].victorySay();
+    } else {
+      say('kamus', "Still breathing, Command. Zeraa got away... but so did I. Coming home — for REAL this time.", 'k_survive', 3.5);
+      say('commander', "Confirmed kill... the belt is clear. Outstanding flying, Kamus. Come home — dinner's on me.", 'c_victory', 4);
+    }
     el('v-score').textContent = 'FINAL SCORE : ' + score;
     el('victory').classList.add('on');
   }
@@ -1996,11 +4451,22 @@ function firePlayer() {
   if (player.weapon === 1) spawn(0, 0);
   else if (player.weapon === 2) { spawn(0.9, 0); spawn(-0.9, 0); }
   else { spawn(0.9, 0); spawn(-0.9, 0); spawn(0.4, 0.16); spawn(-0.4, -0.16); }
+  // orbital drones fire straight shots from wherever they are
+  for (let i = 0; i < player.options; i++) {
+    const b = take(playerBullets);
+    if (!b) break;
+    b.mesh.position.copy(optionMeshes[i].position);
+    b.mesh.position.x += 1.2;
+    b.vel.set(95, 0, 0);
+    b.mesh.rotation.z = Math.PI / 2;
+    b.life = 1.4;
+  }
   audio.shoot();
 }
 
 function updatePlayer(dt, input) {
   if (!player.alive) {
+    for (const om of optionMeshes) om.visible = false;
     player.respawnT -= dt;
     if (player.respawnT <= 0 && player.lives >= 0) {
       player.alive = true;
@@ -2015,17 +4481,32 @@ function updatePlayer(dt, input) {
     // top-down: up-key flies up-screen (+x world), left/right strafes (screen-right = -y)
     player.pos.x += input.y * player.speed * dt;
     player.pos.y -= input.x * player.speed * dt;
+  } else if (viewMode === 'rail') {
+    // rail: strafe across the track; up/down nudges throttle (small depth drift)
+    player.pos.y -= input.x * player.speed * dt;
+    player.pos.x += input.y * player.speed * 0.35 * dt;
   } else {
     player.pos.x += input.x * player.speed * dt;
     player.pos.y += input.y * player.speed * dt;
   }
-  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 4, play.fw * 0.35);
-  player.pos.y = THREE.MathUtils.clamp(player.pos.y, -play.lat + 4.5, play.lat - 5.5);
+  if (viewMode === 'rail')
+    player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 8, -play.fw + 24);
+  else
+    player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 4, play.fw * 0.35);
+  let latLim = play.lat - 5.5;
+  if (viewMode === 'top' && STAGES[stageIdx].canyon)
+    latLim = Math.min(latLim, canyonWallY() - 5); // the canyon squeezes you in
+  player.pos.y = THREE.MathUtils.clamp(player.pos.y, -latLim, latLim);
   ship.position.copy(player.pos);
   if (viewMode === 'top') {
     // roll into strafes, seen from above
     ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, input.x * 0.6, 10 * dt);
     ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, -input.x * 0.16, 10 * dt);
+    ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, 0, 10 * dt);
+  } else if (viewMode === 'rail') {
+    // seen from behind: bank hard into the strafe, drift the nose
+    ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, input.x * 0.7, 10 * dt);
+    ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, -input.x * 0.22, 10 * dt);
     ship.rotation.y = THREE.MathUtils.lerp(ship.rotation.y, 0, 10 * dt);
   } else {
     ship.rotation.x = THREE.MathUtils.lerp(ship.rotation.x, -input.y * 0.55, 10 * dt);
@@ -2035,6 +4516,19 @@ function updatePlayer(dt, input) {
   const boost = viewMode === 'top' ? input.y : input.x;
   const fl = ship.userData.flame;
   fl.scale.y = 0.8 + Math.random() * 0.5 + (boost > 0 ? 0.5 : 0);
+  const sh = ship.userData.shield;
+  sh.visible = player.shield;
+  if (player.shield) sh.scale.setScalar(1 + Math.sin(clock.elapsedTime * 5) * 0.05);
+  // orbital drones circle in the gameplay plane (reads right in every view)
+  for (let i = 0; i < optionMeshes.length; i++) {
+    const om = optionMeshes[i];
+    om.visible = i < player.options && ship.visible;
+    if (i < player.options) {
+      const a = clock.elapsedTime * 2.6 + i * Math.PI;
+      om.position.set(player.pos.x + Math.cos(a) * 4.4, player.pos.y + Math.sin(a) * 4.4, 0);
+      om.rotation.y += 4 * dt;
+    }
+  }
   fl.material.color.setHSL(0.52 + Math.random() * 0.05, 1, 0.6 + Math.random() * 0.2);
 
   if (player.invuln > 0) {
@@ -2127,6 +4621,62 @@ function bossBulletDamage(bp) {
       return boss.pods.some((p) => p.alive) ? -1 : 1;
     return 0;
   }
+  if (boss.kind === 'drillmaw') {
+    // untouchable while underground; head is the target, body blocks
+    if ((boss.state !== 'surfaced' && boss.state !== 'erupt') ||
+        boss.mesh.position.z < -2.5) return 0;
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    for (let i = 0; i < boss.segs.length; i++)
+      if (d2(bp, boss.segs[i].position) < boss.segR[i]) return -1;
+    return 0;
+  }
+  if (boss.kind === 'colossus') {
+    if (boss.cState !== 'fight') return 0; // scattered parts can't be hurt
+    const core = boss.mesh.position.clone().add(boss.core.position);
+    if (d2(bp, core) < 2.6) return 2; // reactor core sweet spot
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'siren') {
+    if (boss.veiled) return 0; // shots pass straight through the veil
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'mirror') {
+    if (boss.cloaked) return 0; // it isn't where you think it is
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'queen') {
+    const sacPos = boss.mesh.position.clone().add(new THREE.Vector3(boss.sacOff, 0, 0));
+    if (d2(bp, sacPos) < boss.sacR) return 2; // the egg sac is soft
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'chromefang') {
+    const bridgePos = boss.mesh.position.clone().add(boss.bridgeOff);
+    if (d2(bp, bridgePos) < boss.bridgeR) return 2; // aim for the throne
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'throne') {
+    if (boss.stance === 'charge') return -1; // the dome shrugs it off
+    const vexPos = boss.mesh.position.clone().add(boss.vexOff);
+    if (d2(bp, vexPos) < boss.vexR) return 2; // Vex himself, on his chair
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
+  if (boss.kind === 'vexfinal') {
+    if (boss.transitionT > 0) return 0; // mid-metamorphosis
+    if (boss.form === 2) { // the Eye hides behind its plates
+      for (const p of boss.plates) {
+        const pp = boss.mesh.position.clone().add(p.position);
+        if (d2(bp, pp) < 2.7) return -1;
+      }
+    }
+    if (d2(bp, boss.mesh.position) < boss.radius) return 1;
+    return 0;
+  }
   // harvester: exposed spine reactor takes double damage
   const reactor = boss.mesh.position.clone().add(boss.core.position);
   if (d2(bp, reactor) < 2.8) return 2;
@@ -2136,8 +4686,34 @@ function bossBulletDamage(bp) {
 
 function bossTouchesPlayer() {
   if (!boss || boss.dying > 0) return false;
-  // the harvester is a ground unit: you fly safely above it (its guns are the threat)
-  if (boss.kind !== 'harvester' &&
+  if (boss.kind === 'siren' && boss.veiled) return false; // she isn't really there
+  if (boss.kind === 'mirror' && boss.cloaked) return false;
+  if (boss.kind === 'vexfinal' && boss.transitionT > 0) return false;
+  if (boss.kind === 'queen') {
+    const sacPos = boss.mesh.position.clone().add(new THREE.Vector3(boss.sacOff, 0, 0));
+    if (d2(sacPos, player.pos) < boss.sacR + player.radius) return true;
+    return d2(boss.mesh.position, player.pos) < boss.radius + player.radius;
+  }
+  if (boss.kind === 'drillmaw') {
+    // only dangerous while it's actually out of the ground
+    if ((boss.state !== 'surfaced' && boss.state !== 'erupt') ||
+        boss.mesh.position.z < -2) return false;
+    if (d2(boss.mesh.position, player.pos) < boss.radius + player.radius) return true;
+    for (let i = 0; i < boss.segs.length; i++)
+      if (d2(boss.segs[i].position, player.pos) < boss.segR[i] + player.radius) return true;
+    return false;
+  }
+  if (boss.kind === 'colossus') {
+    if (boss.cState !== 'fight') return false; // scattered wreckage drifts harmlessly
+    if (d2(boss.mesh.position, player.pos) < boss.radius + player.radius) return true;
+    for (const f of boss.fists) { // the swinging fists hurt
+      const fp = boss.mesh.position.clone().add(f.fist.position);
+      if (d2(fp, player.pos) < 2.4 + player.radius) return true;
+    }
+    return false;
+  }
+  // ground units (harvester, throne-mech): you fly safely above them
+  if (boss.kind !== 'harvester' && boss.kind !== 'throne' &&
       d2(boss.mesh.position, player.pos) < boss.radius + player.radius) return true;
   if (boss.kind === 'serpent') {
     for (let i = 0; i < boss.segs.length; i++)
@@ -2157,6 +4733,7 @@ function collide() {
     let hit = false;
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
+      if (e.cloaked) continue; // shots pass through a cloaked phantom
       if (d2(bp, e.mesh.position) < e.radius + 0.8) {
         e.hp -= 1;
         audio.hit();
@@ -2190,7 +4767,7 @@ function collide() {
   }
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
-    if (e.type === 'tank') continue; // ground unit: you fly above it
+    if (e.type === 'tank' || (e.type === 'burrower' && e.buried) || e.cloaked) continue; // can't ram what isn't there
     if (d2(e.mesh.position, player.pos) < e.radius + player.radius) {
       killEnemy(e, i);
       playerDie();
@@ -2205,11 +4782,29 @@ function collide() {
     if (!p.active) continue;
     if (d2(p.mesh.position, player.pos) < 3) {
       release(p);
-      if (player.weapon < 3) player.weapon += 1;
-      else addScore(1000);
+      if (player.weapon < 3) {
+        player.weapon += 1;
+        showMsg('WEAPON POWER UP!', 1.6);
+      } else if (player.options < 2) {
+        player.options += 1;
+        showMsg('ORBITAL DRONE DEPLOYED!', 1.8);
+        if (!saidOrbital) {
+          saidOrbital = true;
+          say('nova', 'Orbital drones are live — my little angry babies. Bring them home in one piece!', 'n_orbital', 3);
+        }
+      } else if (!player.shield) {
+        player.shield = true;
+        showMsg('SHIELD UP!', 1.6);
+        if (!saidShield) {
+          saidShield = true;
+          say('nova', "That bubble's my best work — it eats ONE hit. Don't get cocky, flyboy.", 'n_shield', 3);
+        }
+      } else {
+        addScore(1000);
+        showMsg('MAX POWER — BONUS 1000', 1.6);
+      }
       updateLivesHud();
       audio.powerup();
-      showMsg(player.weapon < 3 ? 'WEAPON POWER UP!' : 'MAX POWER!', 1.6);
       if (!saidPower) {
         saidPower = true;
         say('kamus', "Ooh — weapons upgrade! Now we're talking.", 'k_power', 2);
@@ -2223,10 +4818,11 @@ const clock = new THREE.Clock();
 
 function frame() {
   // rAF stalls in hidden/background tabs; fall back to a timer so the game
-  // (and headless testing) keeps running
+  // (and headless testing) keeps running. Hidden timers are throttled to
+  // ~1 Hz, so tick() catches up in fixed sub-steps to hold real-time pace.
   if (document.hidden) setTimeout(frame, 33);
   else requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  const raw = Math.min(clock.getDelta(), 2);
   const input = readInput();
 
   if (input.startEdge) {
@@ -2235,11 +4831,45 @@ function frame() {
       if (state === 'title' || state === 'gameover' || state === 'victory') menuAdvance();
       else if (state === 'playing' || state === 'paused') togglePause();
     }
+  } else if (input.fireEdge &&
+      (state === 'title' || state === 'gameover' || state === 'victory')) {
+    // A / fire also advances menus — Start alone was easy to miss on some pads
+    if (!firstGesture()) menuAdvance();
   }
 
   if (state === 'paused') { renderer.render(scene, camera); return; }
 
+  let remaining = raw;
+  while (remaining > 0) {
+    const dt = Math.min(remaining, 0.05);
+    tick(dt, input);
+    remaining -= dt;
+  }
+
+  // camera: slight follow + shake
+  const sx = (Math.random() - 0.5) * shake * 1.6;
+  const sy = (Math.random() - 0.5) * shake * 1.6;
   if (viewMode === 'top') {
+    camera.up.set(1, 0, 0); // world +x = screen up: enemies pour in from the top
+    camera.position.set(player.pos.x * 0.05 + sx, player.pos.y * 0.08 + sy, 62);
+    camera.lookAt(camera.position.x, camera.position.y, 0);
+  } else if (viewMode === 'rail') {
+    camera.up.set(0, 0, 1); // chase cam: low behind the ship, looking down the track
+    camera.position.set(player.pos.x - 16 + sx * 0.4, player.pos.y * 0.85 + sy, 10);
+    camera.lookAt(player.pos.x + 26, player.pos.y * 0.55, 1);
+  } else {
+    camera.up.set(0, 1, 0);
+    camera.position.set(player.pos.x * 0.06 + sx, 3 + player.pos.y * 0.08 + sy, 62);
+    camera.lookAt(camera.position.x, camera.position.y - 3, 0);
+  }
+
+  renderer.render(scene, camera);
+}
+
+function tick(dt, input) {
+  updateZeraaRun(dt);
+  if (fleetGroup.visible) updateFleet(dt);
+  if (viewMode !== 'side') {
     updateGround(dt);
   } else {
     scrollStars(dt);
@@ -2289,21 +4919,7 @@ function frame() {
   }
 
   updateComms(dt);
-
   shake = Math.max(0, shake - dt * 2.5);
-  const sx = (Math.random() - 0.5) * shake * 1.6;
-  const sy = (Math.random() - 0.5) * shake * 1.6;
-  if (viewMode === 'top') {
-    camera.up.set(1, 0, 0); // world +x = screen up: enemies pour in from the top
-    camera.position.set(player.pos.x * 0.05 + sx, player.pos.y * 0.08 + sy, 62);
-    camera.lookAt(camera.position.x, camera.position.y, 0);
-  } else {
-    camera.up.set(0, 1, 0);
-    camera.position.set(player.pos.x * 0.06 + sx, 3 + player.pos.y * 0.08 + sy, 62);
-    camera.lookAt(camera.position.x, camera.position.y - 3, 0);
-  }
-
-  renderer.render(scene, camera);
 }
 
 // debug/testing hook (console only)
@@ -2321,6 +4937,8 @@ window.__sk = {
   get stageIdx() { return stageIdx; },
   hurtBoss(n) { hitBoss(n); },
   say,
+  spawnEnemy,
+  enemies,
   audio,
   voiceIds: VOICE_IDS,
   scene,

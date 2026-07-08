@@ -273,6 +273,400 @@ const SONG_BOSS4 = {
   ],
 };
 
+// ---------- LEVEL 5 THEME : "Canyon Run" (E minor, 170bpm, 8 bars) ----------
+const LEVEL5_LEAD = [
+  [0, 76, .5], [.5, 79, .5], [1, 76, .5], [1.5, 74, .5], [2, 76, 1], [3, 71, 1],
+  [4, 72, .5], [4.5, 76, .5], [5, 79, 1], [6, 76, .5], [6.5, 72, .5], [7, 74, 1],
+  [8, 74, .5], [8.5, 78, .5], [9, 81, 1], [10, 78, .5], [10.5, 74, .5], [11, 71, 1],
+  [12, 76, 1.5], [13.5, 74, .5], [14, 76, 2],
+  [16, 83, .5], [16.5, 79, .5], [17, 83, .5], [17.5, 79, .5], [18, 81, 1], [19, 79, 1],
+  [20, 79, .5], [20.5, 76, .5], [21, 72, 1], [22, 76, .5], [22.5, 79, .5], [23, 84, 1],
+  [24, 86, .5], [24.5, 83, .5], [25, 81, .5], [25.5, 78, .5], [26, 74, 1], [27, 78, 1],
+  [28, 79, .5], [28.5, 78, .5], [29, 75, 1], [30, 76, 2],
+];
+const LEVEL5_ROOTS = [40, 36, 38, 40, 40, 36, 38, 47]; // Em C D Em Em C D B
+const LEVEL5_STABS = [[55, 59], [52, 55], [54, 57], [55, 59], [55, 59], [52, 55], [54, 57], [59, 63]];
+
+const SONG_LEVEL5 = {
+  bpm: 170, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 6, notes: LEVEL5_LEAD },
+    { wave: 'square', gain: 0.05, detune: 8, notes: LEVEL5_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL5_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL5_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i === 3 || i === 7 ? { kick: [0, 1.75, 2, 3.5], snare: [1, 3, 3.75] } : null)).flat() },
+  ],
+};
+
+// ---------- BOSS 5 THEME : "Drillmaw" (A phrygian, 180bpm, 4 bars) ----------
+const BOSS5_LEAD = [
+  [0, 81, .5], [.5, 84, .5], [1, 82, .5], [1.5, 84, .5], [2, 81, 1], [3, 76, 1],
+  [4, 77, .5], [4.5, 81, .5], [5, 79, .5], [5.5, 81, .5], [6, 77, 1], [7, 72, 1],
+  [8, 84, .5], [8.5, 88, .5], [9, 86, .5], [9.5, 88, .5], [10, 84, 1], [11, 82, 1],
+  [12, 82, .5], [12.5, 81, .5], [13, 79, .5], [13.5, 77, .5], [14, 76, 1], [15, 82, 1],
+];
+const BOSS5_ROOTS = [45, 45, 46, 45]; // A A Bb A
+const BOSS5_BASS_PAT = [0, 0, 1, 0, 0, 12, 7, 1];
+const BOSS5_STABS = [[57, 60], [57, 60], [58, 62], [57, 60]];
+
+const SONG_BOSS5 = {
+  bpm: 180, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 9, notes: BOSS5_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 10, notes: BOSS5_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, BOSS5_BASS_PAT), BOSS5_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS5_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .75, 1.5, 2, 2.75], snare: [1, 3],
+        hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 6 THEME : "Junkyard Drift" (B minor, 166bpm, 8 bars) ----------
+const LEVEL6_LEAD = [
+  [0, 78, .5], [.5, 74, .5], [1, 78, .5], [1.5, 79, .5], [2, 81, 1], [3, 79, .5], [3.5, 78, .5],
+  [4, 79, 1], [5, 78, .5], [5.5, 76, .5], [6, 74, 2],
+  [8, 76, .5], [8.5, 79, .5], [9, 83, 1], [10, 81, .5], [10.5, 79, .5], [11, 76, 1],
+  [12, 78, 1.5], [13.5, 76, .5], [14, 78, 2],
+  [16, 86, .5], [16.5, 83, .5], [17, 86, .5], [17.5, 83, .5], [18, 85, 1], [19, 83, 1],
+  [20, 79, 1], [21, 81, .5], [21.5, 79, .5], [22, 78, 1], [23, 76, 1],
+  [24, 81, .5], [24.5, 79, .5], [25, 78, .5], [25.5, 76, .5], [26, 73, 1], [27, 76, 1],
+  [28, 74, .5], [28.5, 73, .5], [29, 74, 1], [30, 78, 2],
+];
+const LEVEL6_ROOTS = [47, 43, 45, 47, 47, 43, 45, 42]; // Bm G A Bm Bm G A F#
+const LEVEL6_STABS = [[59, 62], [55, 59], [57, 61], [59, 62], [59, 62], [55, 59], [57, 61], [54, 58]];
+
+const SONG_LEVEL6 = {
+  bpm: 166, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 6, notes: LEVEL6_LEAD },
+    { wave: 'square', gain: 0.05, detune: 8, notes: LEVEL6_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL6_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL6_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i % 2 === 1 ? { kick: [0, 1.75, 2], snare: [1, 3, 3.5] } : null)).flat() },
+  ],
+};
+
+// ---------- BOSS 6 THEME : "Scrap Colossus" (D phrygian stomp, 172bpm, 4 bars) ----------
+const BOSS6_LEAD = [
+  [0, 74, .5], [.5, 77, .5], [1, 75, .5], [1.5, 77, .5], [2, 74, 1], [3, 69, 1],
+  [4, 70, .5], [4.5, 74, .5], [5, 72, .5], [5.5, 74, .5], [6, 70, 1], [7, 65, 1],
+  [8, 77, .5], [8.5, 81, .5], [9, 79, .5], [9.5, 81, .5], [10, 77, 1], [11, 75, 1],
+  [12, 75, .5], [12.5, 74, .5], [13, 72, .5], [13.5, 70, .5], [14, 69, 1], [15, 75, 1],
+];
+const BOSS6_ROOTS = [38, 38, 39, 38]; // D D Eb D
+const BOSS6_BASS_PAT = [0, 0, 1, 0, 0, 7, 6, 1];
+const BOSS6_STABS = [[62, 65], [62, 65], [63, 67], [62, 65]];
+
+const SONG_BOSS6 = {
+  bpm: 172, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 9, notes: BOSS6_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 10, notes: BOSS6_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, BOSS6_BASS_PAT), BOSS6_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS6_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1, 2, 3], snare: [1, 3], hat: [.5, 1.5, 2.5, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 7 THEME : "The Velvet Passage" (C# minor, 174bpm, 8 bars) ----------
+const LEVEL7_LEAD = [
+  [0, 76, .5], [.5, 80, .5], [1, 76, .5], [1.5, 75, .5], [2, 76, 1], [3, 73, 1],
+  [4, 81, .5], [4.5, 78, .5], [5, 76, 1], [6, 73, .5], [6.5, 76, .5], [7, 78, 1],
+  [8, 78, .5], [8.5, 75, .5], [9, 71, 1], [10, 75, .5], [10.5, 78, .5], [11, 83, 1],
+  [12, 80, 1.5], [13.5, 78, .5], [14, 76, 2],
+  [16, 85, .5], [16.5, 80, .5], [17, 85, .5], [17.5, 80, .5], [18, 83, 1], [19, 80, 1],
+  [20, 81, 1], [21, 80, .5], [21.5, 78, .5], [22, 76, 1], [23, 78, 1],
+  [24, 78, .5], [24.5, 80, .5], [25, 83, 1], [26, 81, .5], [26.5, 78, .5], [27, 75, 1],
+  [28, 75, .5], [28.5, 76, .5], [29, 78, 1], [30, 80, 2],
+];
+const LEVEL7_ROOTS = [37, 45, 47, 37, 37, 45, 47, 44]; // C#m A B C#m C#m A B G#
+const LEVEL7_STABS = [[61, 64], [57, 61], [59, 63], [61, 64], [61, 64], [57, 61], [59, 63], [56, 60]];
+
+const SONG_LEVEL7 = {
+  bpm: 174, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 7, notes: LEVEL7_LEAD },
+    { wave: 'square', gain: 0.05, detune: 9, notes: LEVEL7_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL7_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL7_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i === 7 ? { kick: [0, 1.75, 2, 3.5], snare: [1, 3, 3.75] } : { kick: [0, 2, 2.5] })).flat() },
+  ],
+};
+
+// ---------- BOSS 7 THEME : "Siren Chariot" (F# minor, 182bpm, 4 bars) ----------
+const BOSS7_LEAD = [
+  [0, 78, .5], [.5, 81, .5], [1, 80, .5], [1.5, 81, .5], [2, 78, 1], [3, 73, 1],
+  [4, 74, .5], [4.5, 78, .5], [5, 76, .5], [5.5, 78, .5], [6, 74, 1], [7, 69, 1],
+  [8, 81, .5], [8.5, 85, .5], [9, 83, .5], [9.5, 85, .5], [10, 81, 1], [11, 80, 1],
+  [12, 80, .5], [12.5, 78, .5], [13, 76, .5], [13.5, 74, .5], [14, 73, 1], [15, 80, 1],
+];
+const BOSS7_ROOTS = [42, 42, 45, 44]; // F# F# A G#
+const BOSS7_BASS_PAT = [0, 0, 7, 0, 0, 12, 7, 1];
+const BOSS7_STABS = [[54, 57], [54, 57], [57, 61], [56, 60]];
+
+const SONG_BOSS7 = {
+  bpm: 182, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 10, notes: BOSS7_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 11, notes: BOSS7_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, BOSS7_BASS_PAT), BOSS7_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS7_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1.5, 2, 3.5], snare: [1, 3],
+        hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 8 THEME : "Nebula of Ghosts" (E minor, 168bpm, 8 bars) ----------
+const LEVEL8_LEAD = [
+  [0, 76, .5], [.5, 79, .5], [1, 77, .5], [1.5, 79, .5], [2, 76, 1], [3, 71, 1],
+  [4, 77, 1], [5, 76, .5], [5.5, 74, .5], [6, 72, 2],
+  [8, 79, .5], [8.5, 83, .5], [9, 81, .5], [9.5, 83, .5], [10, 79, 1], [11, 77, 1],
+  [12, 75, 1], [13, 76, .5], [13.5, 79, .5], [14, 76, 2],
+  [16, 88, .5], [16.5, 83, .5], [17, 88, .5], [17.5, 83, .5], [18, 86, 1], [19, 83, 1],
+  [20, 77, 1], [21, 79, .5], [21.5, 77, .5], [22, 76, 1], [23, 72, 1],
+  [24, 79, .5], [24.5, 77, .5], [25, 76, .5], [25.5, 74, .5], [26, 71, 1], [27, 74, 1],
+  [28, 75, .5], [28.5, 76, .5], [29, 75, 1], [30, 76, 2],
+];
+const LEVEL8_ROOTS = [40, 41, 40, 47, 40, 41, 43, 47]; // Em F Em B Em F G B
+const LEVEL8_STABS = [[52, 55], [53, 57], [52, 55], [59, 63], [52, 55], [53, 57], [55, 59], [59, 63]];
+
+const SONG_LEVEL8 = {
+  bpm: 168, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.13, vib: 9, notes: LEVEL8_LEAD },
+    { wave: 'square', gain: 0.05, detune: 10, notes: LEVEL8_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.30, notes: bars(bassBar, LEVEL8_ROOTS) },
+    { wave: 'square', gain: 0.03, notes: LEVEL8_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i % 2 === 1 ? { kick: [0, 2.5], snare: [1, 3], hat: [.5, 1.5, 2.5, 3.25, 3.5] } : { kick: [0, 2.5] })).flat() },
+  ],
+};
+
+// ---------- BOSS 8 THEME : "Mirror Match" ----------
+// the stage 1 melody, played back WRONG — sawtooth, dark bass, too fast
+const SONG_BOSS8 = {
+  bpm: 176, beats: 16, loop: true,
+  tracks: [
+    { wave: 'sawtooth', gain: 0.115, vib: 12, notes: LEVEL_LEAD.filter(n => n[0] < 16) },
+    { wave: 'square', gain: 0.05, detune: 12, notes: LEVEL_LEAD.filter(n => n[0] < 16).map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, [0, 0, 1, 0, 0, 12, 7, 6]), [45, 41, 43, 40]) },
+    { wave: 'square', gain: 0.04, notes: [[57, 60], [53, 57], [55, 59], [52, 56]].map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1.5, 2, 3.5], snare: [1, 3], hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 9 THEME : "Hive Descent" (G minor, 172bpm, 8 bars) ----------
+const LEVEL9_LEAD = [
+  [0, 79, .5], [.5, 82, .5], [1, 80, .5], [1.5, 82, .5], [2, 79, 1], [3, 74, 1],
+  [4, 75, .5], [4.5, 79, .5], [5, 77, .5], [5.5, 79, .5], [6, 75, 1], [7, 70, 1],
+  [8, 80, .5], [8.5, 79, .5], [9, 77, .5], [9.5, 75, .5], [10, 74, 1], [11, 77, 1],
+  [12, 79, 1.5], [13.5, 77, .5], [14, 79, 2],
+  [16, 86, .5], [16.5, 82, .5], [17, 86, .5], [17.5, 82, .5], [18, 84, 1], [19, 82, 1],
+  [20, 80, 1], [21, 79, .5], [21.5, 77, .5], [22, 75, 1], [23, 72, 1],
+  [24, 74, .5], [24.5, 77, .5], [25, 79, 1], [26, 80, .5], [26.5, 79, .5], [27, 75, 1],
+  [28, 74, .5], [28.5, 75, .5], [29, 74, 1], [30, 79, 2],
+];
+const LEVEL9_ROOTS = [43, 43, 44, 43, 43, 41, 39, 43]; // Gm Gm Ab Gm Gm F Eb Gm
+const LEVEL9_STABS = [[55, 58], [55, 58], [56, 60], [55, 58], [55, 58], [53, 57], [51, 55], [55, 58]];
+
+const SONG_LEVEL9 = {
+  bpm: 172, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 8, notes: LEVEL9_LEAD },
+    { wave: 'square', gain: 0.05, detune: 9, notes: LEVEL9_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.31, notes: bars((s, r) => bassBar(s, r, [0, 0, 1, 0, 0, 12, 7, 1]), LEVEL9_ROOTS) },
+    { wave: 'square', gain: 0.035, notes: LEVEL9_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        { kick: [0, 1.5, 2], snare: [1, 3], hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5] })).flat() },
+  ],
+};
+
+// ---------- BOSS 9 THEME : "Brood Queen" (C minor skitter, 186bpm, 4 bars) ----------
+const BOSS9_LEAD = [
+  [0, 72, .5], [.5, 75, .5], [1, 73, .5], [1.5, 75, .5], [2, 72, 1], [3, 67, 1],
+  [4, 79, .5], [4.5, 82, .5], [5, 80, .5], [5.5, 82, .5], [6, 79, 1], [7, 75, 1],
+  [8, 73, .5], [8.5, 77, .5], [9, 75, .5], [9.5, 77, .5], [10, 73, 1], [11, 68, 1],
+  [12, 75, .5], [12.5, 73, .5], [13, 72, .5], [13.5, 70, .5], [14, 67, 1], [15, 73, 1],
+];
+const BOSS9_ROOTS = [36, 39, 37, 36]; // C Eb Db C
+const BOSS9_STABS = [[60, 63], [63, 67], [61, 65], [60, 63]];
+
+const SONG_BOSS9 = {
+  bpm: 186, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 11, notes: BOSS9_LEAD },
+    { wave: 'sawtooth', gain: 0.04, detune: 12, notes: BOSS9_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, [0, 0, 1, 0, 0, 7, 6, 1]), BOSS9_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: BOSS9_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .75, 1.5, 2, 2.75], snare: [1, 3],
+        hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 10 THEME : "March of the Argo" (D minor martial, 170bpm) ----------
+const LEVEL10_LEAD = [
+  [0, 74, .75], [.75, 74, .25], [1, 77, 1], [2, 74, .75], [2.75, 74, .25], [3, 81, 1],
+  [4, 79, .5], [4.5, 77, .5], [5, 79, 1], [6, 74, 2],
+  [8, 77, .75], [8.75, 77, .25], [9, 82, 1], [10, 81, .5], [10.5, 79, .5], [11, 77, 1],
+  [12, 76, 1], [13, 73, .5], [13.5, 76, .5], [14, 81, 2],
+  [16, 86, .75], [16.75, 86, .25], [17, 84, .5], [17.5, 82, .5], [18, 81, 1], [19, 79, 1],
+  [20, 79, .75], [20.75, 79, .25], [21, 82, 1], [22, 79, .5], [22.5, 77, .5], [23, 74, 1],
+  [24, 76, .5], [24.5, 79, .5], [25, 84, 1], [26, 84, .5], [26.5, 83, .5], [27, 79, 1],
+  [28, 81, .75], [28.75, 79, .25], [29, 77, .5], [29.5, 76, .5], [30, 74, 2],
+];
+const LEVEL10_ROOTS = [38, 43, 46, 45, 38, 43, 36, 45]; // Dm Gm Bb A Dm Gm C A
+const LEVEL10_STABS = [[62, 65], [55, 58], [58, 62], [57, 61], [62, 65], [55, 58], [60, 64], [57, 61]];
+
+const SONG_LEVEL10 = {
+  bpm: 170, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 6, notes: LEVEL10_LEAD },
+    { wave: 'square', gain: 0.05, detune: 8, notes: LEVEL10_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.31, notes: bars(bassBar, LEVEL10_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: LEVEL10_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i === 7 ? { kick: [0, 2], snare: [1, 2.5, 3, 3.25, 3.5, 3.75] } // snare roll into the repeat
+                : { kick: [0, 2], snare: [1, 2.5, 3] })).flat() },
+  ],
+};
+
+// ---------- BOSS 10 THEME : "Chrome Fang" — Vex's leitmotif (E/Bb tritone, 176bpm) ----------
+const BOSS10_LEAD = [
+  [0, 76, 1], [1, 82, 1], [2, 76, .5], [2.5, 79, .5], [3, 82, 1],
+  [4, 81, .5], [4.5, 79, .5], [5, 76, 1], [6, 74, .5], [6.5, 76, .5], [7, 70, 1],
+  [8, 76, 1], [9, 82, 1], [10, 83, .5], [10.5, 82, .5], [11, 79, 1],
+  [12, 78, .5], [12.5, 76, .5], [13, 74, .5], [13.5, 73, .5], [14, 76, 2],
+];
+const BOSS10_ROOTS = [40, 40, 46, 44]; // E E Bb G# — the tritone snarl
+const BOSS10_STABS = [[52, 58], [52, 58], [58, 64], [56, 62]]; // E+Bb dyads
+
+const SONG_BOSS10 = {
+  bpm: 176, beats: 16, loop: true,
+  tracks: [
+    { wave: 'sawtooth', gain: 0.115, vib: 8, notes: BOSS10_LEAD },
+    { wave: 'square', gain: 0.05, detune: 10, notes: BOSS10_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), BOSS10_ROOTS) },
+    { wave: 'square', gain: 0.045, notes: BOSS10_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1.5, 2], snare: [3], hat: [0, 1, 2, 3], // imperial half-time stomp
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 11 THEME : "Obsidian Palace" (B minor march, 168bpm) ----------
+const LEVEL11_LEAD = [
+  [0, 83, .5], [.5, 84, .5], [1, 83, .5], [1.5, 81, .5], [2, 78, 1], [3, 74, 1],
+  [4, 72, .5], [4.5, 76, .5], [5, 79, 1], [6, 78, .5], [6.5, 76, .5], [7, 74, 1],
+  [8, 83, .75], [8.75, 83, .25], [9, 84, 1], [10, 83, .5], [10.5, 81, .5], [11, 78, 1],
+  [12, 76, .5], [12.5, 78, .5], [13, 74, 1], [14, 71, 2],
+  [16, 86, .5], [16.5, 83, .5], [17, 86, .5], [17.5, 83, .5], [18, 84, 1], [19, 81, 1],
+  [20, 79, 1], [21, 81, .5], [21.5, 79, .5], [22, 78, 1], [23, 76, 1],
+  [24, 78, .75], [24.75, 78, .25], [25, 81, 1], [26, 79, .5], [26.5, 78, .5], [27, 74, 1],
+  [28, 72, .5], [28.5, 74, .5], [29, 76, 1], [30, 71, 2],
+];
+const LEVEL11_ROOTS = [47, 48, 47, 42, 47, 48, 45, 42]; // B C B F# B C A F#
+const LEVEL11_STABS = [[59, 62], [60, 64], [59, 62], [54, 58], [59, 62], [60, 64], [57, 61], [54, 58]];
+
+const SONG_LEVEL11 = {
+  bpm: 168, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.135, vib: 7, notes: LEVEL11_LEAD },
+    { wave: 'square', gain: 0.05, detune: 9, notes: LEVEL11_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.31, notes: bars((s, r) => bassBar(s, r, [0, 0, 1, 0, 0, 12, 7, 1]), LEVEL11_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: LEVEL11_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        { kick: [0, 2], snare: [1, 2.5, 3], hat: [.5, 1.5, 2.5, 3.5] })).flat() },
+  ],
+};
+
+// ---------- BOSS 11 THEME : "Serpent Throne" (Vex's motif, heavier, 180bpm) ----------
+const BOSS11_LEAD = [
+  [0, 76, .5], [.5, 82, .5], [1, 76, .5], [1.5, 82, .5], [2, 79, 1], [3, 76, 1],
+  [4, 74, .5], [4.5, 80, .5], [5, 74, .5], [5.5, 80, .5], [6, 77, 1], [7, 74, 1],
+  [8, 76, 1], [9, 82, 1], [10, 84, .5], [10.5, 82, .5], [11, 79, 1],
+  [12, 80, .5], [12.5, 79, .5], [13, 77, .5], [13.5, 76, .5], [14, 74, 1], [15, 70, 1],
+];
+const BOSS11_ROOTS = [40, 46, 40, 44]; // E Bb E G# — the tritone, now stomping
+const BOSS11_STABS = [[52, 58], [58, 64], [52, 58], [56, 62]];
+
+const SONG_BOSS11 = {
+  bpm: 180, beats: 16, loop: true,
+  tracks: [
+    { wave: 'sawtooth', gain: 0.115, vib: 9, notes: BOSS11_LEAD },
+    { wave: 'square', gain: 0.05, detune: 11, notes: BOSS11_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), BOSS11_ROOTS) },
+    { wave: 'square', gain: 0.045, notes: BOSS11_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, 1, 2, 3], snare: [1, 3], hat: [.5, 1.5, 2.5, 3.5],
+      })).flat() },
+  ],
+};
+
+// ---------- LEVEL 12 THEME : "Heart of the Gorgon" (C minor epic, 176bpm) ----------
+const LEVEL12_LEAD = [
+  [0, 79, .5], [.5, 84, .5], [1, 79, .5], [1.5, 84, .5], [2, 87, 1], [3, 84, 1],
+  [4, 86, .5], [4.5, 84, .5], [5, 82, 1], [6, 79, .5], [6.5, 77, .5], [7, 75, 1],
+  [8, 77, .75], [8.75, 77, .25], [9, 82, 1], [10, 80, .5], [10.5, 79, .5], [11, 75, 1],
+  [12, 74, .5], [12.5, 75, .5], [13, 77, 1], [14, 79, 2],
+  [16, 84, .75], [16.75, 84, .25], [17, 87, 1], [18, 86, .5], [18.5, 84, .5], [19, 82, 1],
+  [20, 80, 1], [21, 82, .5], [21.5, 80, .5], [22, 79, 1], [23, 77, 1],
+  [24, 75, .5], [24.5, 79, .5], [25, 82, 1], [26, 84, .5], [26.5, 82, .5], [27, 79, 1],
+  [28, 77, .5], [28.5, 79, .5], [29, 83, 1], [30, 84, 2],
+];
+const LEVEL12_ROOTS = [36, 44, 46, 43, 36, 44, 39, 43]; // Cm Ab Bb G Cm Ab Eb G
+const LEVEL12_STABS = [[60, 63], [56, 60], [58, 62], [55, 59], [60, 63], [56, 60], [51, 55], [55, 59]];
+
+const SONG_LEVEL12 = {
+  bpm: 176, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 7, notes: LEVEL12_LEAD },
+    { wave: 'square', gain: 0.055, detune: 9, notes: LEVEL12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.31, notes: bars((s, r) => bassBar(s, r, [0, 0, 1, 0, 0, 12, 7, 1]), LEVEL12_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: LEVEL12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        i === 7 ? { kick: [0, 1.5, 2, 3.5], snare: [1, 3, 3.5, 3.75] }
+                : { kick: [0, 1.5, 2], snare: [1, 3] })).flat() },
+  ],
+};
+
+// ---------- BOSS 12 THEME : "Vex Eternal" (the tritone unleashed, 188bpm) ----------
+const BOSS12_LEAD = [
+  [0, 76, .5], [.5, 82, .5], [1, 76, .5], [1.5, 82, .5], [2, 88, 1], [3, 82, 1],
+  [4, 86, .5], [4.5, 84, .5], [5, 82, .5], [5.5, 80, .5], [6, 82, 1], [7, 76, 1],
+  [8, 88, .5], [8.5, 87, .5], [9, 86, .5], [9.5, 84, .5], [10, 82, 1], [11, 79, 1],
+  [12, 80, .5], [12.5, 82, .5], [13, 84, .5], [13.5, 86, .5], [14, 88, 2],
+];
+const BOSS12_ROOTS = [40, 46, 44, 46]; // E Bb G# Bb
+const BOSS12_STABS = [[52, 58], [58, 64], [56, 62], [58, 64]];
+
+const SONG_BOSS12 = {
+  bpm: 188, beats: 16, loop: true,
+  tracks: [
+    { wave: 'sawtooth', gain: 0.115, vib: 10, notes: BOSS12_LEAD },
+    { wave: 'square', gain: 0.06, detune: 12, notes: BOSS12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'square', gain: 0.03, detune: -8, notes: BOSS12_LEAD.map(n => [n[0], n[1] + 12, n[2]]) },
+    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), BOSS12_ROOTS) },
+    { wave: 'square', gain: 0.045, notes: BOSS12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .75, 1.5, 2, 2.75, 3.5], snare: [1, 3],
+        hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5],
+      })).flat() },
+  ],
+};
+
 // ---------- VICTORY FANFARE ----------
 const SONG_VICTORY = {
   bpm: 132, beats: 12, loop: false,
@@ -301,6 +695,14 @@ const SONGS = {
   level2: SONG_LEVEL2, boss2: SONG_BOSS2, victory: SONG_VICTORY,
   level3: SONG_LEVEL3, boss3: SONG_BOSS3,
   level4: SONG_LEVEL4, boss4: SONG_BOSS4,
+  level5: SONG_LEVEL5, boss5: SONG_BOSS5,
+  level6: SONG_LEVEL6, boss6: SONG_BOSS6,
+  level7: SONG_LEVEL7, boss7: SONG_BOSS7,
+  level8: SONG_LEVEL8, boss8: SONG_BOSS8,
+  level9: SONG_LEVEL9, boss9: SONG_BOSS9,
+  level10: SONG_LEVEL10, boss10: SONG_BOSS10,
+  level11: SONG_LEVEL11, boss11: SONG_BOSS11,
+  level12: SONG_LEVEL12, boss12: SONG_BOSS12,
 };
 
 // ---------- engine ----------
@@ -315,6 +717,7 @@ export class ChipAudio {
     this.voiceRaw = new Map();   // id -> ArrayBuffer (fetched, not yet decoded)
     this.voiceBuf = new Map();   // id -> AudioBuffer
     this.activeVoices = 0;
+    this.voiceSources = new Set();
   }
 
   init() {
@@ -394,14 +797,24 @@ export class ChipAudio {
     src.buffer = buf;
     src.connect(this.voiceBus);
     this.activeVoices++;
+    this.voiceSources.add(src);
     this.musicBus.gain.setTargetAtTime(0.32, t, 0.06);
     src.onended = () => {
+      this.voiceSources.delete(src);
       this.activeVoices = Math.max(0, this.activeVoices - 1);
       if (this.activeVoices === 0)
         this.musicBus.gain.setTargetAtTime(0.9, this.ctx.currentTime, 0.18);
     };
     src.start(t);
     return buf.duration;
+  }
+
+  // hard-stop any in-flight voice lines (used when leaving a run for the menu)
+  stopVoices() {
+    if (!this.ready) return;
+    for (const src of [...this.voiceSources]) {
+      try { src.stop(); } catch (e) {}
+    }
   }
 
   // radio squelch "krrsht" when a comm channel opens
