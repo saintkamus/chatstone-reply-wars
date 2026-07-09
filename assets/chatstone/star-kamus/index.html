@@ -38,6 +38,14 @@
   #right-block{text-align:right;}
   #hiscore{font-size:12px;letter-spacing:2px;color:var(--amber);}
   #power{font-size:12px;letter-spacing:2px;color:var(--magenta);margin-top:4px;}
+  #plasma-wrap{width:92px;height:5px;border:1px solid var(--cyan);margin-top:5px;
+    margin-left:auto;background:rgba(0,20,40,.6);}
+  #plasma{height:100%;width:100%;background:linear-gradient(90deg,#2fb0ff,#aef4ff);}
+
+  /* NOVA bomb flash */
+  #flash{position:fixed;inset:0;z-index:60;background:#fff;opacity:0;
+    pointer-events:none;transition:opacity .8s ease-out;}
+  #flash.on{opacity:1;transition:opacity .05s;}
 
   #bossbar-wrap{position:fixed;top:64px;left:50%;transform:translateX(-50%);
     width:min(560px,70vw);z-index:30;display:none;text-align:center;}
@@ -116,6 +124,7 @@
   <div id="right-block">
     <div id="hiscore" class="hud-text">HI&nbsp;0</div>
     <div id="power" class="hud-text">PWR&nbsp;&#9646;</div>
+    <div id="plasma-wrap"><div id="plasma"></div></div>
   </div>
 </div>
 
@@ -125,6 +134,7 @@
 </div>
 
 <div id="msg" class="hud-text"></div>
+<div id="flash"></div>
 <div id="warning"><span>!! WARNING !!</span></div>
 <div id="stagebanner"><span id="stagebanner-text" class="hud-text"></span></div>
 
@@ -140,16 +150,19 @@
   <div class="title-sub hud-text">SECTOR&nbsp;7&nbsp;DEFENSE&nbsp;FORCE&nbsp;PRESENTS</div>
   <div class="title-big hud-text">STAR&nbsp;KAMUS</div>
   <div class="press hud-text" id="title-press">CLICK&nbsp;OR&nbsp;PRESS&nbsp;ANY&nbsp;KEY</div>
+  <div class="small hud-text" id="stage-select"></div>
   <div class="small hud-text">
-    MOVE&nbsp;:&nbsp;ARROWS&nbsp;/&nbsp;WASD&nbsp;/&nbsp;LEFT&nbsp;STICK<br>
-    FIRE&nbsp;:&nbsp;SPACE&nbsp;/&nbsp;Z&nbsp;/&nbsp;PAD&nbsp;A-X&nbsp;&nbsp;&nbsp;PAUSE&nbsp;:&nbsp;P&nbsp;/&nbsp;START
+    MOVE&nbsp;:&nbsp;ARROWS&nbsp;/&nbsp;WASD&nbsp;/&nbsp;STICK&nbsp;&nbsp;&nbsp;FIRE&nbsp;:&nbsp;SPACE&nbsp;/&nbsp;Z&nbsp;/&nbsp;PAD&nbsp;A<br>
+    PLASMA&nbsp;:&nbsp;X&nbsp;/&nbsp;PAD&nbsp;Y&nbsp;&nbsp;&nbsp;NOVA&nbsp;:&nbsp;C&nbsp;/&nbsp;PAD&nbsp;LB&nbsp;&nbsp;&nbsp;PAUSE&nbsp;:&nbsp;P&nbsp;/&nbsp;START<br>
+    H&nbsp;:&nbsp;PAIR&nbsp;PS5&nbsp;DUALSENSE&nbsp;(USB)
   </div>
 </div>
 
 <div id="gameover" class="overlay">
   <div class="go-big hud-text">GAME&nbsp;OVER</div>
   <div class="small hud-text" id="go-score"></div>
-  <div class="press hud-text">PRESS&nbsp;ENTER&nbsp;/&nbsp;START</div>
+  <div class="press hud-text">FIRE&nbsp;/&nbsp;ENTER&nbsp;—&nbsp;CONTINUE</div>
+  <div class="small hud-text">SCORE&nbsp;RESETS&nbsp;·&nbsp;SUPPLY&nbsp;DROPS&nbsp;INBOUND&nbsp;·&nbsp;ESC&nbsp;—&nbsp;TITLE</div>
 </div>
 
 <div id="clear" class="overlay">
@@ -170,6 +183,6 @@
 </div>
 
 <!-- bump ?v= when main.js/audio.js change: the preview proxy caches modules hard -->
-<script type="module" src="./main.js?v=13"></script>
+<script type="module" src="./main.js?v=14"></script>
 </body>
 </html>

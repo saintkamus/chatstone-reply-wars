@@ -1,8 +1,10 @@
 // STAR KAMUS — side-view 3D space shooter. Two stages, two very angry bosses.
 import * as THREE from './vendor/three.module.js';
-import { ChipAudio } from './audio.js?v=13';
+import { ChipAudio } from './audio.js?v=14';
+import { DualSense } from './dualsense.js?v=14';
 
 const audio = new ChipAudio();
+const dualsense = new DualSense();
 
 // voice comm assets (generated externally, e.g. Seedance). Missing files are fine:
 // comms fall back to text + blips. Drop mp3/wav/m4a/ogg into assets/voice/.
@@ -342,10 +344,23 @@ function updateGround(dt) {
   }
 }
 
+// cinematic camera blend: on a mid-stage view switch the camera SWINGS from
+// the old perspective into the new one instead of cutting
+let camBlend = 1;
+const camFrom = { pos: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), target: new THREE.Vector3() };
+const lastCamTarget = new THREE.Vector3();
+function beginCamBlend() {
+  camFrom.pos.copy(camera.position);
+  camFrom.up.copy(camera.up);
+  camFrom.target.copy(lastCamTarget);
+  camBlend = 0;
+}
+
 // mid-stage view switch (the finale dives from overflight into the core):
 // clears the field for a clean transition, repositions the ship, reskins scenery
 function switchView(mode, opts) {
   const o = opts || {};
+  beginCamBlend();
   applyViewMode(mode);
   if (mode !== 'side') grassMatRef.color.setHex(o.groundColor || 0x2e5c30);
   canyonGroup.visible = false;
@@ -381,6 +396,8 @@ function applyViewMode(mode) {
   groundGroup.visible = !space;
   scene.fog.far = mode === 'rail' ? 300 : mode === 'top' ? 170 : 220;
   scene.fog.color.setHex(0x02030a);
+  // roll the hull so the wings face the camera in overhead/chase views
+  shipModel.rotation.x = space ? 0 : Math.PI / 2;
   computeView();
 }
 
@@ -484,38 +501,42 @@ function updateZeraaRun(dt) {
 }
 
 // ---------------------------------------------------------------- player
+// `ship` carries position + banking; `shipModel` holds the meshes and gets a
+// base roll in top/rail views so the wings lie flat toward the camera
 const ship = new THREE.Group();
+const shipModel = new THREE.Group();
+ship.add(shipModel);
 {
   const hullMat = new THREE.MeshStandardMaterial({ color: 0xd8e4f0, metalness: 0.5, roughness: 0.35 });
   const accentMat = new THREE.MeshStandardMaterial({ color: 0x2fae5c, metalness: 0.4, roughness: 0.4 });
   const body = new THREE.Mesh(new THREE.ConeGeometry(1.1, 5.4, 10), hullMat);
   body.rotation.z = -Math.PI / 2;
-  ship.add(body);
+  shipModel.add(body);
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10),
     new THREE.MeshStandardMaterial({ color: 0x35d0ff, emissive: 0x0a4a70, metalness: 0.2, roughness: 0.1 }));
   canopy.position.set(0.5, 0.5, 0);
   canopy.scale.set(1.5, 0.8, 0.8);
-  ship.add(canopy);
+  shipModel.add(canopy);
   const wing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.16, 3.4), accentMat);
   wing.position.set(-1.1, -0.1, 0);
-  ship.add(wing);
+  shipModel.add(wing);
   const tail = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.5, 0.14), accentMat);
   tail.position.set(-1.9, 0.7, 0);
-  ship.add(tail);
+  shipModel.add(tail);
   const flame = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 8),
     new THREE.MeshBasicMaterial({ color: 0x66eaff }));
   flame.rotation.z = Math.PI / 2;
   flame.position.set(-3.4, 0, 0);
-  ship.add(flame);
+  shipModel.add(flame);
   ship.userData.flame = flame;
   const glow = new THREE.PointLight(0x44ccff, 30, 22);
   glow.position.set(-3.2, 0, 0);
-  ship.add(glow);
+  shipModel.add(glow);
   // one-hit shield bubble (max-power pickup reward)
   const shield = new THREE.Mesh(new THREE.SphereGeometry(3.1, 18, 14),
     new THREE.MeshBasicMaterial({ color: 0x50d8ff, transparent: true, opacity: 0.22, depthWrite: false }));
   shield.visible = false;
-  ship.add(shield);
+  shipModel.add(shield);
   ship.userData.shield = shield;
   scene.add(ship);
 }
@@ -526,7 +547,10 @@ const player = {
   radius: 1.5,
   fireCool: 0,
   weapon: 1,       // 1..3
-  options: 0,      // 0..2 orbital drones that fire with you
+  options: 0,      // 0..2 orbital drones
+  droneMode: 'seeker', // 'seeker' (auto-lock, low dps) | 'plasma' (beams, depletes)
+  plasma: 100,     // plasma charge 0..100
+  nova: 0,         // stored NOVA bomb (0/1)
   shield: false,   // absorbs one hit
   lives: 3,
   invuln: 0,
@@ -625,6 +649,46 @@ function dropPowerup(pos) {
   p.baseY = pos.y;
 }
 
+// wide plasma beams (the drones' heavy mode): pierce up to 3 targets
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xaef4ff, transparent: true, opacity: 0.85 });
+const beams = makePool(12, () => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.4, 0.4), beamMat));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(5.2, 1.1, 0.5),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 })));
+  return g;
+});
+function spawnBeam(pos) {
+  const b = take(beams);
+  if (!b) return;
+  b.mesh.position.set(pos.x + 3, pos.y, 0);
+  b.vel.set(80, 0, 0);
+  b.life = 1.3;
+  b.pierce = 3;
+  b.hitSet = new Set();
+  audio.beamFire();
+}
+
+// NOVA bomb pickup: rare, blinding, wipes every bullet on screen
+const novas = makePool(2, () => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 0),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xc0c0ff, emissiveIntensity: 1.2 })));
+  g.add(new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.1, 6, 22),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })));
+  g.add(new THREE.PointLight(0xffffff, 40, 24));
+  return g;
+});
+let novaDropped = false; // at most one drop per stage
+function dropNova(pos) {
+  const p = take(novas);
+  if (!p) return;
+  p.mesh.position.copy(pos);
+  p.vel.set(-7, 0, 0);
+  p.life = 14;
+  p.baseY = pos.y;
+}
+
 // ---------------------------------------------------------------- enemies
 const enemies = [];
 
@@ -646,6 +710,8 @@ const junkMat = new THREE.MeshStandardMaterial({ color: 0x7a8290, metalness: 0.7
 const rustMat = new THREE.MeshStandardMaterial({ color: 0x8a5a30, metalness: 0.4, roughness: 0.8 });
 const phantomBaseMat = new THREE.MeshStandardMaterial({ color: 0xb0c0e8, emissive: 0x203050, metalness: 0.6, roughness: 0.3, transparent: true });
 const eggMat = new THREE.MeshStandardMaterial({ color: 0xc8b060, emissive: 0x584010, metalness: 0.1, roughness: 0.45 });
+const stingerMat = new THREE.MeshStandardMaterial({ color: 0xff8020, emissive: 0x501800, metalness: 0.5, roughness: 0.35 });
+const guardCoreMat = new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0x803008, metalness: 0.3, roughness: 0.25 });
 const membraneMat = new THREE.MeshStandardMaterial({ color: 0x7a3040, emissive: 0x240a10, roughness: 0.7 });
 const lancerMat = new THREE.MeshStandardMaterial({ color: 0x8890d8, emissive: 0x181c48, metalness: 0.6, roughness: 0.35 });
 const splitterMat = new THREE.MeshStandardMaterial({ color: 0xe8a030, emissive: 0x402808, metalness: 0.5, roughness: 0.4 });
@@ -776,6 +842,33 @@ function buildEnemy(type) {
     tip.position.x = -2.8;
     g.add(tip);
     g.userData.tipMat = tipMat;
+  } else if (type === 'stinger') {
+    // kamikaze chaser: hunts you down and detonates in a cross of light
+    g.add(new THREE.Mesh(new THREE.OctahedronGeometry(1.1), stingerMat));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.4, 0.12, 6, 16),
+      new THREE.MeshBasicMaterial({ color: 0xffd060 }));
+    g.add(ring);
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(0.5, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    g.add(glow);
+    g.userData.glow = glow;
+  } else if (type === 'guardian') {
+    // two-form mid-boss: armored shell, then a berserk core
+    const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(2.8, 0), turretMat);
+    g.add(shell);
+    g.userData.shell = shell;
+    for (let i = 0; i < 4; i++) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.8, 5), spikeMat);
+      const a = i / 4 * Math.PI * 2 + Math.PI / 4;
+      sp.position.set(Math.cos(a) * 2.9, Math.sin(a) * 2.9, 0);
+      sp.rotation.z = a - Math.PI / 2;
+      g.add(sp);
+      g.userData['spike' + i] = sp;
+    }
+    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5, 1), guardCoreMat);
+    core.visible = false;
+    g.add(core);
+    g.userData.core = core;
   } else if (type === 'cruiser') {
     const hull = new THREE.Mesh(new THREE.BoxGeometry(8, 2.6, 3), junkMat);
     g.add(hull);
@@ -853,6 +946,8 @@ const ENEMY_DEFS = {
   mini:    { hp: 1, radius: 1.0, score: 60 },
   egg:     { hp: 3, radius: 2.2, score: 400 }, // hatches drones until popped
   cruiser: { hp: 14, radius: 3.6, score: 800 }, // rolling broadside walls
+  stinger: { hp: 1, radius: 1.4, score: 150 }, // kamikaze chaser, cross-blast on death
+  guardian:{ hp: 40, radius: 3.0, score: 1500 }, // two-form mid-boss
 };
 
 function spawnEnemy(type, y, opts) {
@@ -861,6 +956,9 @@ function spawnEnemy(type, y, opts) {
   const o = opts || {};
   mesh.position.set(o.x !== undefined ? o.x : play.fw + 6, y,
     type === 'tank' || type === 'burrower' ? -6 : 0);
+  // winged fliers were modeled for the side view; roll them flat overhead/chase
+  if (viewMode !== 'side' && (type === 'weaver' || type === 'phantom' || type === 'darter'))
+    mesh.rotation.x = Math.PI / 2;
   scene.add(mesh);
   enemies.push({
     type, mesh, hp: def.hp, radius: def.radius, score: def.score,
@@ -874,6 +972,13 @@ function killEnemy(e, i) {
   audio.explode();
   addScore(e.score);
   if (e.drops) dropPowerup(e.mesh.position);
+  // pity drops: an unpowered pilot finds spare parts everywhere
+  else if (player.weapon < 2 && Math.random() < 0.09) dropPowerup(e.mesh.position);
+  // and once in a stage, something priceless tumbles out of the wreckage
+  else if (!novaDropped && levelTime > 25 && Math.random() < 0.025) {
+    novaDropped = true;
+    dropNova(e.mesh.position);
+  }
   if (e.type === 'ast') {
     // shatter into fragments
     for (const vy of [-5, 1, 5])
@@ -891,6 +996,49 @@ function killEnemy(e, i) {
   scene.remove(e.mesh);
   enemies.splice(i, 1);
   shake = Math.max(shake, big ? 0.5 : 0.2);
+}
+
+// stinger detonation: a blinding cross of light — the four beams do the damage
+const blasts = [];
+function stingerDetonate(e, i) {
+  const pos = e.mesh.position.clone().setZ(0);
+  scene.remove(e.mesh);
+  enemies.splice(i, 1);
+  const g = new THREE.Group();
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(30, 2.4, 0.5), mat));
+  const v = new THREE.Mesh(new THREE.BoxGeometry(2.4, 30, 0.5), mat);
+  g.add(v);
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(1.8, 10, 8), mat));
+  const light = new THREE.PointLight(0xffffff, 140, 45);
+  g.add(light);
+  g.position.copy(pos);
+  scene.add(g);
+  blasts.push({ g, mat, light, t: 0 });
+  burst(pos, 22, 22, 1.3);
+  audio.stingerBoom();
+  shake = Math.max(shake, 0.8);
+  rumble(0.7, 1, 250);
+}
+
+function updateBlasts(dt) {
+  for (let i = blasts.length - 1; i >= 0; i--) {
+    const b = blasts[i];
+    b.t += dt;
+    const k = b.t / 0.5;
+    b.mat.opacity = Math.max(0, 1 - k);
+    b.light.intensity = 140 * Math.max(0, 1 - k);
+    b.g.scale.setScalar(1 + k * 0.35);
+    if (b.t < 0.4 && player.alive && player.invuln <= 0) {
+      const dx = Math.abs(player.pos.x - b.g.position.x);
+      const dy = Math.abs(player.pos.y - b.g.position.y);
+      if ((dx < 15.5 && dy < 1.9) || (dy < 15.5 && dx < 1.9)) playerDie();
+    }
+    if (b.t > 0.55) {
+      scene.remove(b.g);
+      blasts.splice(i, 1);
+    }
+  }
 }
 
 // mine proximity detonation: radial burst, no score
@@ -1106,6 +1254,53 @@ function updateEnemies(dt) {
           }
         }
       } else m.position.x -= 32 * dt; // done: punches past you
+    } else if (e.type === 'stinger') {
+      if (player.alive) {
+        const dx = player.pos.x - m.position.x, dy = player.pos.y - m.position.y;
+        const d = Math.hypot(dx, dy) || 1;
+        m.position.x += dx / d * 24 * dt;
+        m.position.y += dy / d * 24 * dt;
+        if (d < 3.4 || e.t > 14) { stingerDetonate(e, i); continue; }
+      } else m.position.x -= 12 * dt;
+      m.rotation.x += 7 * dt;
+      m.rotation.z += 4 * dt;
+      m.userData.glow.visible = Math.floor(e.t * 7) % 2 === 0; // frantic blink
+    } else if (e.type === 'guardian') {
+      if (e.form === undefined) e.form = 1;
+      if (e.form === 1 && e.hp <= 15) { // the shell cracks — form two
+        e.form = 2;
+        e.radius = 1.8;
+        m.userData.shell.visible = false;
+        for (let k = 0; k < 4; k++) m.userData['spike' + k].visible = false;
+        m.userData.core.visible = true;
+        burst(m.position, 22, 20, 1.3);
+        audio.explode();
+        shake = Math.max(shake, 0.5);
+        for (let k = 0; k < 8; k++)
+          enemyFireAngle(m.position, k / 8 * Math.PI * 2, 16);
+      }
+      if (e.form === 1) {
+        if (m.position.x > play.fw * 0.55) m.position.x -= 8 * dt;
+        m.position.y = e.baseY + Math.sin(e.t * 0.9) * 3;
+        m.rotation.z += 1.4 * dt;
+        m.rotation.y += 0.8 * dt;
+        e.fireCool -= dt;
+        if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
+          for (let k = -2; k <= 2; k++) enemyFire(m.position, 22, k * 0.22);
+          e.fireCool = 3;
+        }
+      } else {
+        m.position.x -= 22 * dt; // berserk core: fast, erratic, spiteful
+        m.position.y = e.baseY + Math.sin(e.t * 3.5) * 9;
+        m.rotation.x += 8 * dt;
+        e.fireCool -= dt;
+        if (e.fireCool <= 0 && player.alive) {
+          const off = Math.random() * Math.PI;
+          for (let k = 0; k < 8; k++)
+            enemyFireAngle(m.position, off + k / 8 * Math.PI * 2, 15);
+          e.fireCool = 2.4;
+        }
+      }
     } else if (e.type === 'cruiser') {
       m.position.x -= 6.5 * dt;
       m.position.y = e.baseY + Math.sin(e.t * 0.8) * 1.5;
@@ -2276,6 +2471,8 @@ function vexNextForm() {
   burst(b.mesh.position, 50, 30, 2);
   audio.bigExplode();
   shake = 1.4;
+  // dps-driven music escalation: each form change hardens the theme
+  if (audioStarted) audio.playSong(b.form === 2 ? 'boss12b' : 'boss12c');
   if (b.form === 2) {
     say('vex', 'Flesh... failed me. The CORE will not. BEHOLD THE EYE OF THE GORGON.', 'v_form2', 3.5);
   } else {
@@ -3595,6 +3792,16 @@ function eggs(ys) {
   ys.forEach((y, i) =>
     setTimeout(() => { if (state === 'playing') spawnEnemy('egg', y); }, i * 350));
 }
+// kamikaze stingers — some slip in from BEHIND you
+function stingers(n, fromBehind) {
+  for (let i = 0; i < n; i++)
+    setTimeout(() => {
+      if (state !== 'playing') return;
+      const behind = fromBehind && i % 2 === 0;
+      spawnEnemy('stinger', (Math.random() * 2 - 1) * (play.lat - 6),
+        behind ? { x: -play.fw + 3 } : {});
+    }, i * 600);
+}
 
 const TIMELINE7 = [
   { t: 0.5,  fn: () => say('commander',
@@ -3616,7 +3823,7 @@ const TIMELINE7 = [
   { t: 50,   fn: () => { spawnEnemy('lancer', 5); spawnEnemy('lancer', -5); darterStack([10, -10]); } },
   { t: 53,   fn: () => say('commander', "Kamus, punch through! That's an ORDER! We are not losing you to that snake's honey trap!", 'c_rage', 3.5) },
   { t: 55,   fn: () => { spawnEnemy('heavy', -3, { drops: true }); splitters([6, -6]); } },
-  { t: 61,   fn: () => { phantoms([7, -7]); weaverWall([3, -3]); mineRow([9, 0, -9]); } },
+  { t: 61,   fn: () => { phantoms([7, -7]); weaverWall([3, -3]); mineRow([9, 0, -9]); stingers(2); } },
   { t: 67,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('lancer', 0); spawnEnemy('lancer', -8); } },
   { t: 72,   fn: () => { droneWave(10, 0, 10, 240); splitters([5, -5]); } },
   { t: 77,   fn: () => { phantoms([9, 2, -6]); spawnEnemy('heavy', 4, { drops: true }); } },
@@ -3638,10 +3845,10 @@ const TIMELINE8 = [
   { t: 29,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); phantoms([5, -5]); } },
   { t: 35,   fn: () => { orbiterPair(7); orbiterPair(-7); splitters([8, 0, -8]); } },
   { t: 41,   fn: () => { mineRow([9, 0, -9]); phantoms([6, -6]); weaverWall([2, -2]); } },
-  { t: 47,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('lancer', 0); spawnEnemy('lancer', -8); } },
+  { t: 47,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('guardian', 0); spawnEnemy('lancer', -8); } },
   { t: 53,   fn: () => { spawnEnemy('heavy', -4); spawnEnemy('heavy', 6, { drops: true }); phantoms([8, -8]); } },
   { t: 59,   fn: () => { droneWave(10, 0, 11, 240); splitters([5, -5]); } },
-  { t: 65,   fn: () => phantoms([10, 4, -4, -10]) },
+  { t: 65,   fn: () => { phantoms([10, 4, -4, -10]); stingers(2, true); } },
   { t: 71,   fn: () => { spawnEnemy('lancer', 5); spawnEnemy('lancer', -5); weaverWall([9, -9]); mineRow([6, -6]); } },
   { t: 76,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); phantoms([7, 0, -7]); } },
   { t: 81,   fn: () => bossWarning('c_warning8',
@@ -3665,7 +3872,7 @@ const TIMELINE9 = [
   { t: 47,   fn: () => say('vex',
       'Those are my CHILDREN, little pilot. When the Queen is done with you, I will pick my teeth with your wings.', 'v_fury', 3.5) },
   { t: 48,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); droneWave(8, 0, 9, 260); } },
-  { t: 54,   fn: () => { eggs([8, -8]); spawnEnemy('heavy', -3, { drops: true }); weaverWall([4, -4]); } },
+  { t: 54,   fn: () => { eggs([8, -8]); spawnEnemy('heavy', -3, { drops: true }); stingers(2); } },
   { t: 60,   fn: () => { droneWave(12, 0, 11, 220); splitters([7, -7]); } },
   { t: 66,   fn: () => { eggs([10, 0, -10]); darterStack([9, 3, -3, -9]); } },
   { t: 72,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); phantoms([6, -6]); droneWave(6, 0, 10, 260); } },
@@ -3688,11 +3895,11 @@ const TIMELINE10 = [
   { t: 32,   fn: () => { phantoms([7, -7]); darterStack([11, 5, -5, -11]); } },
   { t: 36,   fn: argoVolley },
   { t: 38,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); droneWave(6, 0, 8); } },
-  { t: 45,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); mineRow([8, 0, -8]); } },
+  { t: 45,   fn: () => { spawnEnemy('guardian', 4); spawnEnemy('lancer', -6); mineRow([8, 0, -8]); } },
   { t: 50,   fn: () => say('vex', 'You burn my children... and dare approach MY fleet? Come then, little pilot. Come DIE at scale.', 'v_taunt10', 4) },
   { t: 52,   fn: () => { spawnEnemy('cruiser', 0); spawnEnemy('heavy', -8, { drops: true }); weaverWall([10, -10]); } },
   { t: 58,   fn: argoVolley },
-  { t: 59,   fn: () => { raiders(5); splitters([6, 0, -6]); } },
+  { t: 59,   fn: () => { raiders(5); splitters([6, 0, -6]); stingers(3, true); } },
   { t: 65,   fn: () => { spawnEnemy('cruiser', 7); spawnEnemy('cruiser', -7); phantoms([3, -3]); } },
   { t: 70,   fn: () => { say('zeraa', 'Missed me, darling? Duck.', 'z_assist', 2); zeraaRun(); } },
   { t: 72,   fn: () => { droneWave(10, 0, 10, 240); darterStack([8, 2, -4, -10]); } },
@@ -3725,8 +3932,8 @@ const TIMELINE11 = [
       audio.powerup();
     } },
   { t: 49,   fn: () => { tankRow([9, 0, -9]); spawnEnemy('lancer', 7); spawnEnemy('lancer', -7); } },
-  { t: 55,   fn: () => { spawnEnemy('cruiser', -4); weaverWall([6, -6]); burrowers([5, -5], 0.5); } },
-  { t: 61,   fn: () => { phantoms([8, 0, -8]); raiders(4); } },
+  { t: 55,   fn: () => { spawnEnemy('guardian', -3); weaverWall([6, -6]); burrowers([5, -5], 0.5); } },
+  { t: 61,   fn: () => { phantoms([8, 0, -8]); raiders(4); stingers(2); } },
   { t: 67,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); tankRow([12, 6, -6, -12]); } },
   { t: 73,   fn: () => { droneWave(10, 0, 10, 240); splitters([7, -7]); mineRow([8, 0, -8]); } },
   { t: 78,   fn: () => { spawnEnemy('cruiser', 6); spawnEnemy('cruiser', -6); burrowers([2, -2], 0.4); } },
@@ -3752,20 +3959,22 @@ const TIMELINE12 = [
       switchView('rail', { groundColor: 0x241016, fogFar: 260, fogColor: 0x120608,
         railColors: { a: 0xff4040, b: 0x8040ff, arch: 0x802030 } });
       showBanner('THE CORE SHAFT', 3);
+      if (audioStarted) audio.playSong('level12b'); // the theme picks up speed
     } },
   { t: 38,   fn: () => droneWave(6, 3, 5) },
-  { t: 42,   fn: () => { splitters([5, -5]); mineRow([8, 0, -8]); } },
+  { t: 42,   fn: () => { splitters([5, -5]); mineRow([8, 0, -8]); stingers(2); } },
   { t: 47,   fn: () => phantoms([7, 0, -7]) },
   { t: 52,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); droneWave(6, -4, 6); } },
-  { t: 57,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); splitters([8, -8]); } },
+  { t: 57,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); spawnEnemy('guardian', -4); } },
   { t: 62,   fn: () => { phantoms([5, -5]); mineRow([6, -6]); droneWave(8, 0, 9, 260); } },
   { t: 67,   fn: () => say('kamus', "I can see it. The heart. It's... it's looking at me.", 'k_core', 3) },
   { t: 70,   fn: () => {
       switchView('side');
       showBanner('THE HEART OF THE GORGON', 3);
+      if (audioStarted) audio.playSong('level12c'); // the theme turns to dread
     } },
   { t: 72,   fn: () => { phantoms([6, -6]); spawnEnemy('cruiser', 0); } },
-  { t: 76,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); splitters([3, -3]); } },
+  { t: 76,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); splitters([3, -3]); stingers(3, true); } },
   { t: 81,   fn: () => bossWarning('c_warning12',
       "Everything he has left is in that chamber, Kamus. And everything WE have is with you. All of us. GO.") },
   { t: 86,   fn: bossArrive },
@@ -3908,6 +4117,20 @@ window.addEventListener('keydown', (e) => {
   if (state !== 'paused') audio.resume();
   if (e.code === 'Enter' && !consumed) menuAdvance();
   if (e.code === 'KeyP' && (state === 'playing' || state === 'paused')) togglePause();
+  if (e.code === 'KeyX') togglePlasma();
+  if (e.code === 'KeyC') fireNova();
+  if (e.code === 'Escape' && state === 'gameover') toTitle();
+  if (state === 'title' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+    selectedStage = THREE.MathUtils.clamp(
+      selectedStage + (e.code === 'ArrowRight' ? 1 : -1), 0, bestStage);
+    updateStageSelect();
+    audio.talk(420);
+  }
+  if (e.code === 'KeyH' && state === 'title') { // pair a DualSense (WebHID)
+    dualsense.connect()
+      .then(() => showMsg('DUALSENSE LINKED — ADAPTIVE TRIGGERS ON', 3))
+      .catch((err) => showMsg('DUALSENSE: ' + String(err.message || err).slice(0, 40).toUpperCase(), 3));
+  }
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('pointerdown', () => {
@@ -3918,8 +4141,11 @@ window.addEventListener('pointerdown', () => {
 
 let padStartPrev = false;
 let padFirePrev = false;
+let padPlasmaPrev = false;
+let padNovaPrev = false;
 function readInput() {
   let x = 0, y = 0, fire = false, start = false, padFire = false;
+  let padPlasma = false, padNova = false;
   if (keys['ArrowLeft'] || keys['KeyA']) x -= 1;
   if (keys['ArrowRight'] || keys['KeyD']) x += 1;
   if (keys['ArrowUp'] || keys['KeyW']) y += 1;
@@ -3958,18 +4184,26 @@ function readInput() {
     if (btn(15)) x += 1;
     if (btn(12)) y += 1;
     if (btn(13)) y -= 1;
-    for (const bi of [0, 1, 2, 3, 4, 5, 6, 7]) // face buttons, bumpers, triggers
+    for (const bi of [0, 1, 2, 6, 7]) // A/B/X + triggers = fire
       if (btn(bi)) { fire = true; padFire = true; }
-    if (btn(9) || btn(8)) start = true; // menu / view
+    if (btn(3)) padPlasma = true;              // Y = plasma toggle
+    if (btn(4) || btn(5)) padNova = true;      // bumpers = NOVA bomb
+    if (btn(9) || btn(8)) start = true;        // menu / view
   }
   const startEdge = start && !padStartPrev;
   padStartPrev = start;
   const fireEdge = padFire && !padFirePrev;
   padFirePrev = padFire;
-  return { x: THREE.MathUtils.clamp(x, -1, 1), y: THREE.MathUtils.clamp(y, -1, 1), fire, startEdge, fireEdge };
+  const plasmaEdge = padPlasma && !padPlasmaPrev;
+  padPlasmaPrev = padPlasma;
+  const novaEdge = padNova && !padNovaPrev;
+  padNovaPrev = padNova;
+  return { x: THREE.MathUtils.clamp(x, -1, 1), y: THREE.MathUtils.clamp(y, -1, 1),
+    fire, startEdge, fireEdge, plasmaEdge, novaEdge };
 }
 
 function rumble(strong, weak, ms) {
+  dualsense.rumble(strong, weak, ms); // richer haptics when a DualSense is paired
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   for (const pad of pads) {
     if (pad && pad.connected && pad.vibrationActuator) {
@@ -3997,7 +4231,8 @@ function updateLivesHud() {
   el('lives').innerHTML = '&#9650;'.repeat(Math.max(0, player.lives));
   el('power').innerHTML = 'PWR&nbsp;' + '&#9646;'.repeat(player.weapon) +
     '&#9670;'.repeat(player.options) +
-    (player.shield ? '&nbsp;&#9678;' : '');
+    (player.shield ? '&nbsp;&#9678;' : '') +
+    (player.nova ? '&nbsp;&#10022;' : '');
 }
 
 let msgTimer = 0;
@@ -4252,7 +4487,41 @@ function firstGesture() {
 
 function menuAdvance() {
   if (state === 'title') startGame();
-  else if (state === 'gameover' || state === 'victory') toTitle();
+  else if (state === 'gameover') continueGame();
+  else if (state === 'victory') toTitle();
+}
+
+// arcade continue: same stage, score wiped, a fighting-chance loadout,
+// and emergency supply drops so you can rebuild before the boss
+function continueGame() {
+  score = 0;
+  startStage(stageIdx, false);
+  player.lives = 3;
+  player.weapon = 2;
+  player.options = 0;
+  player.shield = false;
+  player.plasma = 100;
+  player.droneMode = 'seeker';
+  player.nova = 0;
+  addScore(0);
+  updateLivesHud();
+  showMsg('CONTINUE — SUPPLY DROPS INBOUND', 2.5);
+  for (const [delay, y] of [[4000, 5], [12000, -5], [20000, 0]])
+    setTimeout(() => {
+      if (state === 'playing') dropPowerup(new THREE.Vector3(play.fw * 0.7, y, 0));
+    }, delay);
+}
+
+// stage select: highest stage reached is remembered across sessions
+let bestStage = Number(localStorage.getItem('starkamus-best') || 0);
+let selectedStage = 0;
+function updateStageSelect() {
+  const s = el('stage-select');
+  if (!s) return;
+  s.innerHTML = bestStage > 0
+    ? '&#9664;&nbsp;START&nbsp;AT&nbsp;STAGE&nbsp;' + (selectedStage + 1) +
+      '&nbsp;&#9654;&nbsp;&nbsp;(BEST:&nbsp;' + (bestStage + 1) + ')'
+    : '';
 }
 
 function toTitle() {
@@ -4266,12 +4535,13 @@ function toTitle() {
   el('victory').classList.remove('on');
   el('title').classList.add('on');
   el('hud').classList.remove('on');
+  updateStageSelect();
   if (audioStarted) audio.playSong('title');
 }
 
 function startGame() {
   audio.stopVoices();
-  startStage(0, true);
+  startStage(selectedStage, true);
 }
 
 function startStage(i, fresh) {
@@ -4290,9 +4560,17 @@ function startStage(i, fresh) {
     player.weapon = 1;
     player.shield = false;
     player.options = 0;
+    player.plasma = 100;
+    player.droneMode = 'seeker';
+    player.nova = 0;
     saidPower = false;
     saidShield = false;
     saidOrbital = false;
+  }
+  novaDropped = false;
+  if (i > bestStage) {
+    bestStage = i;
+    localStorage.setItem('starkamus-best', String(i));
   }
   player.alive = true;
   player.invuln = 2.5;
@@ -4348,6 +4626,12 @@ function cleanupField() {
   for (const p of enemyBullets) release(p);
   for (const p of particles) release(p);
   for (const p of powerups) release(p);
+  for (const p of beams) release(p);
+  for (const p of novas) release(p);
+  for (let i = blasts.length - 1; i >= 0; i--) {
+    scene.remove(blasts[i].g);
+    blasts.splice(i, 1);
+  }
   el('msg').classList.remove('on');
   commQ.length = 0;
   closeComm();
@@ -4451,17 +4735,83 @@ function firePlayer() {
   if (player.weapon === 1) spawn(0, 0);
   else if (player.weapon === 2) { spawn(0.9, 0); spawn(-0.9, 0); }
   else { spawn(0.9, 0); spawn(-0.9, 0); spawn(0.4, 0.16); spawn(-0.4, -0.16); }
-  // orbital drones fire straight shots from wherever they are
-  for (let i = 0; i < player.options; i++) {
-    const b = take(playerBullets);
-    if (!b) break;
-    b.mesh.position.copy(optionMeshes[i].position);
-    b.mesh.position.x += 1.2;
-    b.vel.set(95, 0, 0);
-    b.mesh.rotation.z = Math.PI / 2;
-    b.life = 1.4;
-  }
   audio.shoot();
+}
+
+// drones fight on their own now: seeker mode auto-locks the nearest target,
+// plasma mode dumps the charge into wide piercing beams while you hold fire
+const droneCool = [0, 0];
+let beamCool = 0;
+function updateDrones(dt, input) {
+  player.plasma = Math.min(100, player.plasma + 6 * dt); // trickle recharge
+  if (player.options === 0 || !player.alive) return;
+  if (player.droneMode === 'seeker') {
+    for (let i = 0; i < player.options; i++) {
+      droneCool[i] -= dt;
+      if (droneCool[i] > 0) continue;
+      let target = null, best = 1e9;
+      for (const e of enemies) {
+        if (e.cloaked || (e.type === 'burrower' && e.buried) || e.type === 'tank') continue;
+        const d = d2(optionMeshes[i].position, e.mesh.position);
+        if (d < best) { best = d; target = e.mesh.position; }
+      }
+      if (!target && boss && boss.entered && boss.dying <= 0) target = boss.mesh.position;
+      if (!target) continue;
+      const b = take(playerBullets);
+      if (!b) continue;
+      b.mesh.position.copy(optionMeshes[i].position);
+      const a = Math.atan2(target.y - b.mesh.position.y, target.x - b.mesh.position.x);
+      b.vel.set(Math.cos(a) * 75, Math.sin(a) * 75, 0);
+      b.mesh.rotation.z = Math.PI / 2 + a;
+      b.life = 1.4;
+      droneCool[i] = 0.55;
+    }
+  } else if (input.fire && player.plasma > 0) {
+    beamCool -= dt;
+    if (beamCool <= 0) {
+      for (let i = 0; i < player.options; i++) spawnBeam(optionMeshes[i].position);
+      player.plasma -= 6;
+      beamCool = 0.35;
+      if (player.plasma <= 0) {
+        player.plasma = 0;
+        player.droneMode = 'seeker';
+        showMsg('PLASMA DEPLETED — SEEKERS ONLINE', 1.8);
+        dualsense.setTrigger('fire');
+      }
+    }
+  }
+}
+
+function togglePlasma() {
+  if (state !== 'playing' || player.options === 0) return;
+  if (player.droneMode === 'plasma') {
+    player.droneMode = 'seeker';
+    showMsg('SEEKER MODE', 1.2);
+    dualsense.setTrigger('fire');
+  } else if (player.plasma >= 25) {
+    player.droneMode = 'plasma';
+    showMsg('PLASMA BEAMS ARMED — HOLD FIRE', 1.6);
+    audio.powerup();
+    dualsense.setTrigger('plasma');
+  } else {
+    showMsg('PLASMA CHARGING...', 1.2);
+  }
+}
+
+function fireNova() {
+  if (state !== 'playing' || !player.nova) return;
+  player.nova = 0;
+  updateLivesHud();
+  const f = el('flash');
+  f.classList.add('on');
+  setTimeout(() => f.classList.remove('on'), 150);
+  for (const b of enemyBullets) release(b); // every hostile bullet, gone
+  burst(player.pos, 40, 30, 1.6);
+  shake = 1.6;
+  player.invuln = Math.max(player.invuln, 1.2);
+  audio.novaBoom();
+  rumble(1, 1, 500);
+  showMsg('N O V A', 1.5);
 }
 
 function updatePlayer(dt, input) {
@@ -4542,6 +4892,7 @@ function updatePlayer(dt, input) {
     firePlayer();
     player.fireCool = 0.13;
   }
+  updateDrones(dt, input);
 }
 
 function updateBullets(dt) {
@@ -4579,12 +4930,26 @@ function updateBullets(dt) {
     p.mesh.scale.multiplyScalar(Math.max(0, 1 - dt * 2.2));
     if (p.life <= 0) release(p);
   }
+  for (const b of beams) {
+    if (!b.active) continue;
+    b.mesh.position.addScaledVector(b.vel, dt);
+    b.life -= dt;
+    if (b.life <= 0 || b.mesh.position.x > play.fw + 10) release(b);
+  }
   for (const p of powerups) {
     if (!p.active) continue;
     p.mesh.position.x += p.vel.x * dt;
     p.mesh.position.y = p.baseY + Math.sin(p.life * 3) * 1.5;
     p.mesh.rotation.y += 3 * dt;
     p.mesh.rotation.x += 2 * dt;
+    p.life -= dt;
+    if (p.life <= 0 || p.mesh.position.x < -play.fw - 6) release(p);
+  }
+  for (const p of novas) {
+    if (!p.active) continue;
+    p.mesh.position.x += p.vel.x * dt;
+    p.mesh.position.y = p.baseY + Math.sin(p.life * 4) * 1.8;
+    p.mesh.rotation.y += 5 * dt;
     p.life -= dt;
     if (p.life <= 0 || p.mesh.position.x < -play.fw - 6) release(p);
   }
@@ -4755,6 +5120,33 @@ function collide() {
     if (hit) release(b);
   }
 
+  // plasma beams: pierce through ranks, punch bosses hard
+  for (const b of beams) {
+    if (!b.active) continue;
+    const bp = b.mesh.position;
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.cloaked || b.hitSet.has(e)) continue;
+      if (d2(bp, e.mesh.position) < e.radius + 2.2) {
+        b.hitSet.add(e);
+        e.hp -= 2;
+        audio.hit();
+        burst(bp, 4, 10, 0.6);
+        if (e.hp <= 0) killEnemy(e, i);
+        b.pierce--;
+        if (b.pierce <= 0) { release(b); break; }
+      }
+    }
+    if (!b.active) continue;
+    const dmg = bossBulletDamage(bp);
+    if (dmg !== 0) {
+      if (dmg > 0) hitBoss(dmg + 2);
+      burst(bp, 6, 12, 0.8);
+      audio.hit();
+      release(b);
+    }
+  }
+
   if (!player.alive || player.invuln > 0) return;
 
   for (const b of enemyBullets) {
@@ -4777,6 +5169,16 @@ function collide() {
   if (bossTouchesPlayer()) {
     playerDie();
     return;
+  }
+  for (const p of novas) {
+    if (!p.active) continue;
+    if (d2(p.mesh.position, player.pos) < 3.2) {
+      release(p);
+      player.nova = 1;
+      updateLivesHud();
+      audio.powerup();
+      showMsg('NOVA BOMB — PRESS C / PAD LB', 2.2);
+    }
   }
   for (const p of powerups) {
     if (!p.active) continue;
@@ -4836,6 +5238,8 @@ function frame() {
     // A / fire also advances menus — Start alone was easy to miss on some pads
     if (!firstGesture()) menuAdvance();
   }
+  if (input.plasmaEdge) togglePlasma();
+  if (input.novaEdge) fireNova();
 
   if (state === 'paused') { renderer.render(scene, camera); return; }
 
@@ -4846,21 +5250,39 @@ function frame() {
     remaining -= dt;
   }
 
-  // camera: slight follow + shake
+  // camera: slight follow + shake, with cinematic blending across view switches
   const sx = (Math.random() - 0.5) * shake * 1.6;
   const sy = (Math.random() - 0.5) * shake * 1.6;
+  const wantPos = new THREE.Vector3();
+  const wantUp = new THREE.Vector3();
+  const wantTarget = new THREE.Vector3();
   if (viewMode === 'top') {
-    camera.up.set(1, 0, 0); // world +x = screen up: enemies pour in from the top
-    camera.position.set(player.pos.x * 0.05 + sx, player.pos.y * 0.08 + sy, 62);
-    camera.lookAt(camera.position.x, camera.position.y, 0);
+    wantUp.set(1, 0, 0); // world +x = screen up: enemies pour in from the top
+    wantPos.set(player.pos.x * 0.05 + sx, player.pos.y * 0.08 + sy, 62);
+    wantTarget.set(wantPos.x, wantPos.y, 0);
   } else if (viewMode === 'rail') {
-    camera.up.set(0, 0, 1); // chase cam: low behind the ship, looking down the track
-    camera.position.set(player.pos.x - 16 + sx * 0.4, player.pos.y * 0.85 + sy, 10);
-    camera.lookAt(player.pos.x + 26, player.pos.y * 0.55, 1);
+    wantUp.set(0, 0, 1); // chase cam: low behind the ship, looking down the track
+    wantPos.set(player.pos.x - 16 + sx * 0.4, player.pos.y * 0.85 + sy, 10);
+    wantTarget.set(player.pos.x + 26, player.pos.y * 0.55, 1);
   } else {
-    camera.up.set(0, 1, 0);
-    camera.position.set(player.pos.x * 0.06 + sx, 3 + player.pos.y * 0.08 + sy, 62);
-    camera.lookAt(camera.position.x, camera.position.y - 3, 0);
+    wantUp.set(0, 1, 0);
+    wantPos.set(player.pos.x * 0.06 + sx, 3 + player.pos.y * 0.08 + sy, 62);
+    wantTarget.set(wantPos.x, wantPos.y - 3, 0);
+  }
+  lastCamTarget.copy(wantTarget);
+  if (camBlend < 1) {
+    camBlend = Math.min(1, camBlend + raw / 2.4);
+    const k = camBlend * camBlend * (3 - 2 * camBlend); // smoothstep swing
+    camera.position.lerpVectors(camFrom.pos, wantPos, k);
+    camera.up.lerpVectors(camFrom.up, wantUp, k).normalize();
+    camera.lookAt(
+      THREE.MathUtils.lerp(camFrom.target.x, wantTarget.x, k),
+      THREE.MathUtils.lerp(camFrom.target.y, wantTarget.y, k),
+      THREE.MathUtils.lerp(camFrom.target.z, wantTarget.z, k));
+  } else {
+    camera.position.copy(wantPos);
+    camera.up.copy(wantUp);
+    camera.lookAt(wantTarget);
   }
 
   renderer.render(scene, camera);
@@ -4899,7 +5321,10 @@ function tick(dt, input) {
     updateEnemies(dt);
     updateBoss(dt);
     updateBullets(dt);
+    updateBlasts(dt);
     collide();
+    el('plasma').style.width = player.plasma + '%';
+    el('plasma-wrap').style.opacity = player.options > 0 ? 1 : 0.15;
 
     if (msgTimer > 0) {
       msgTimer -= dt;
@@ -4946,5 +5371,6 @@ window.__sk = {
 };
 
 updateLivesHud();
+updateStageSelect();
 addScore(0);
 frame();

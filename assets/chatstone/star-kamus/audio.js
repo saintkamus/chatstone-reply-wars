@@ -667,6 +667,62 @@ const SONG_BOSS12 = {
   ],
 };
 
+// ---------- LEVEL 12 / BOSS 12 DYNAMIC VARIANTS ----------
+// same themes, escalating energy — swapped live on view switches / boss forms
+const SONG_LEVEL12B = { // the core-shaft dive: faster, busier drums
+  bpm: 184, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 8, notes: LEVEL12_LEAD },
+    { wave: 'square', gain: 0.055, detune: 10, notes: LEVEL12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.31, notes: bars((s, r) => bassBar(s, r, [0, 0, 7, 0, 0, 12, 7, 6]), LEVEL12_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: LEVEL12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        { kick: [0, .75, 1.5, 2, 2.75], snare: [1, 3], hat: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5] })).flat() },
+  ],
+};
+const SONG_LEVEL12C = { // the heart chamber: heavier, half-time dread + high shimmer
+  bpm: 170, beats: 32, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.14, vib: 9, notes: LEVEL12_LEAD },
+    { wave: 'square', gain: 0.03, detune: -7, notes: LEVEL12_LEAD.map(n => [n[0], n[1] + 12, n[2]]) },
+    { wave: 'square', gain: 0.05, detune: 10, notes: LEVEL12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), LEVEL12_ROOTS) },
+    { wave: 'square', gain: 0.04, notes: LEVEL12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        { kick: [0, 2], snare: [3], hat: [0, 1, 2, 3] })).flat() },
+  ],
+};
+const SONG_BOSS12B = { // the Eye: the tritone picks up speed
+  bpm: 194, beats: 16, loop: true,
+  tracks: SONG_BOSS12_TRACKS_B(),
+};
+const SONG_BOSS12C = { // Gorgon Prime: full assault
+  bpm: 202, beats: 16, loop: true,
+  tracks: SONG_BOSS12_TRACKS_C(),
+};
+function SONG_BOSS12_TRACKS_B() {
+  return [
+    { wave: 'sawtooth', gain: 0.115, vib: 11, notes: BOSS12_LEAD },
+    { wave: 'square', gain: 0.06, detune: 12, notes: BOSS12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'square', gain: 0.035, detune: -8, notes: BOSS12_LEAD.map(n => [n[0], n[1] + 12, n[2]]) },
+    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), BOSS12_ROOTS) },
+    { wave: 'square', gain: 0.045, notes: BOSS12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .75, 1.5, 2, 2.75, 3.5], snare: [1, 3],
+        hat: [0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75],
+      })).flat() },
+  ];
+}
+function SONG_BOSS12_TRACKS_C() {
+  const t = SONG_BOSS12_TRACKS_B();
+  t[0] = { wave: 'sawtooth', gain: 0.125, vib: 14, notes: BOSS12_LEAD };
+  t[5] = { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+      kick: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5], snare: [1, 3, 3.75],
+      hat: [0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75],
+    })).flat() };
+  return t;
+}
+
 // ---------- VICTORY FANFARE ----------
 const SONG_VICTORY = {
   bpm: 132, beats: 12, loop: false,
@@ -703,6 +759,8 @@ const SONGS = {
   level10: SONG_LEVEL10, boss10: SONG_BOSS10,
   level11: SONG_LEVEL11, boss11: SONG_BOSS11,
   level12: SONG_LEVEL12, boss12: SONG_BOSS12,
+  level12b: SONG_LEVEL12B, level12c: SONG_LEVEL12C,
+  boss12b: SONG_BOSS12B, boss12c: SONG_BOSS12C,
 };
 
 // ---------- engine ----------
@@ -992,6 +1050,23 @@ export class ChipAudio {
       o.connect(g); g.connect(this.sfxBus);
       o.start(t); o.stop(t + 0.13);
     });
+  }
+  // kamikaze stinger: piercing shriek + crack
+  stingerBoom() {
+    this._blip(2200, 300, 0.35, 'sawtooth', 0.14);
+    this._blip(3200, 800, 0.18, 'square', 0.08);
+    this._boom(0.4, 0.4, 5000);
+  }
+  // nova bomb: bottom-of-the-ocean thump under a blinding sweep
+  novaBoom() {
+    this._boom(1.2, 0.6, 1600);
+    this._blip(400, 3200, 0.5, 'sawtooth', 0.1); // rising bloom
+    this._blip(3200, 200, 0.9, 'square', 0.06);
+  }
+  // plasma beam discharge
+  beamFire() {
+    this._blip(240, 90, 0.16, 'sawtooth', 0.09);
+    this._blip(1200, 500, 0.1, 'square', 0.04);
   }
   siren() {
     if (!this.ready) return;
