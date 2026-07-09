@@ -692,36 +692,57 @@ const SONG_LEVEL12C = { // the heart chamber: heavier, half-time dread + high sh
         { kick: [0, 2], snare: [3], hat: [0, 1, 2, 3] })).flat() },
   ],
 };
-const SONG_BOSS12B = { // the Eye: the tritone picks up speed
-  bpm: 194, beats: 16, loop: true,
-  tracks: SONG_BOSS12_TRACKS_B(),
-};
-const SONG_BOSS12C = { // Gorgon Prime: full assault
-  bpm: 202, beats: 16, loop: true,
-  tracks: SONG_BOSS12_TRACKS_C(),
-};
-function SONG_BOSS12_TRACKS_B() {
-  return [
-    { wave: 'sawtooth', gain: 0.115, vib: 11, notes: BOSS12_LEAD },
-    { wave: 'square', gain: 0.06, detune: 12, notes: BOSS12_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
-    { wave: 'square', gain: 0.035, detune: -8, notes: BOSS12_LEAD.map(n => [n[0], n[1] + 12, n[2]]) },
-    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 0, 6, 0, 0, 7, 6]), BOSS12_ROOTS) },
-    { wave: 'square', gain: 0.045, notes: BOSS12_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+// eighth-note broken-chord arpeggio (the FFVII-final-boss organ shimmer)
+function arpBar(start, tones) {
+  const seq = [tones[0], tones[1], tones[2], tones[1], tones[0] + 12, tones[1], tones[2], tones[1]];
+  return seq.map((m, i) => [start + i * 0.5, m, 0.45]);
+}
+
+// ---------- BOSS 12 FORM 2 : "THE EYE OPENS" — vast, hymn-like, wrong ----------
+const BOSS12B_LEAD = [
+  [0, 76, 2], [2, 79, 1], [3, 82, 1],
+  [4, 83, 2], [6, 82, 1], [7, 79, 1],
+  [8, 84, 2], [10, 86, 1], [11, 84, 1],
+  [12, 83, 1.5], [13.5, 82, .5], [14, 79, 2],
+];
+const BOSS12B_ARPS = [[64, 67, 71], [67, 71, 74], [68, 71, 74], [70, 74, 77]]; // Em G G#dim Bb
+const SONG_BOSS12B = {
+  bpm: 172, beats: 16, loop: true,
+  tracks: [
+    { wave: 'square', gain: 0.125, vib: 10, notes: BOSS12B_LEAD },
+    { wave: 'square', gain: 0.06, notes: BOSS12B_ARPS.map((t, i) => arpBar(i * 4, t)).flat() },
+    { wave: 'sawtooth', gain: 0.035, detune: 9, notes: [[0, 52, 4], [4, 55, 4], [8, 56, 4], [12, 58, 4]] },
+    { wave: 'sawtooth', gain: 0.035, detune: -9, notes: [[0, 59, 4], [4, 62, 4], [8, 62, 4], [12, 65, 4]] },
+    { wave: 'triangle', gain: 0.33, notes: bars((s, r) => bassBar(s, r, [0, 0, 12, 0, 0, 7, 12, 0]), [40, 43, 44, 46]) },
     { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
-        kick: [0, .75, 1.5, 2, 2.75, 3.5], snare: [1, 3],
+        kick: [0, 2], snare: [3], hat: [0, 1, 2, 3], // vast half-time processional
+      })).flat() },
+  ],
+};
+
+// ---------- BOSS 12 FORM 3 : "ETERNAL" — the full One-Winged treatment ----------
+const BOSS12C_LEAD = [
+  [0, 88, 1], [1, 83, .5], [1.5, 84, .5], [2, 86, 1.5], [3.5, 83, .5],
+  [4, 84, 1], [5, 82, .5], [5.5, 80, .5], [6, 82, 2],
+  [8, 88, 1], [9, 89, .5], [9.5, 88, .5], [10, 92, 1.5], [11.5, 89, .5],
+  [12, 88, .5], [12.5, 86, .5], [13, 84, .5], [13.5, 82, .5], [14, 83, 2],
+];
+const BOSS12C_ARPS = [[64, 68, 71], [64, 68, 71], [70, 74, 77], [68, 72, 75]]; // E E Bb G#
+const SONG_BOSS12C = {
+  bpm: 196, beats: 16, loop: true,
+  tracks: [
+    { wave: 'sawtooth', gain: 0.12, vib: 12, notes: BOSS12C_LEAD },
+    { wave: 'square', gain: 0.055, detune: 11, notes: BOSS12C_LEAD.map(n => [n[0], n[1] - 12, n[2]]) },
+    { wave: 'square', gain: 0.065, notes: BOSS12C_ARPS.map((t, i) => arpBar(i * 4, t)).flat() },
+    { wave: 'sawtooth', gain: 0.04, detune: 10, notes: [[0, 52, 4], [4, 52, 4], [8, 58, 4], [12, 56, 4]] },
+    { wave: 'sawtooth', gain: 0.04, detune: -10, notes: [[0, 59, 4], [4, 59, 4], [8, 65, 4], [12, 63, 4]] },
+    { wave: 'triangle', gain: 0.34, notes: bars((s, r) => bassBar(s, r, [0, 0, 7, 0, 0, 1, 7, 12]), [40, 40, 46, 44]) },
+    { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
+        kick: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5], snare: [1, 3, 3.75],
         hat: [0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75],
       })).flat() },
-  ];
-}
-function SONG_BOSS12_TRACKS_C() {
-  const t = SONG_BOSS12_TRACKS_B();
-  t[0] = { wave: 'sawtooth', gain: 0.125, vib: 14, notes: BOSS12_LEAD };
-  t[5] = { drums: true, notes: [0, 1, 2, 3].map(i => drumBar(i * 4, {
-      kick: [0, .5, 1, 1.5, 2, 2.5, 3, 3.5], snare: [1, 3, 3.75],
-      hat: [0, .25, .5, .75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75],
-    })).flat() };
-  return t;
-}
+  ],
+};
 
 // ---------- VICTORY FANFARE ----------
 const SONG_VICTORY = {
@@ -922,6 +943,23 @@ export class ChipAudio {
     }
   }
 
+  // FFVII-style phase change: dip the music bus, swap the song under it,
+  // swell back in — reads as one continuous piece transforming
+  swapSong(name, dip = 0.5) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    this.musicBus.gain.cancelScheduledValues(t);
+    this.musicBus.gain.setTargetAtTime(0.0001, t, dip / 3);
+    clearTimeout(this._swapT);
+    this._swapT = setTimeout(() => {
+      this.playSong(name);
+      const t2 = this.ctx.currentTime;
+      this.musicBus.gain.cancelScheduledValues(t2);
+      this.musicBus.gain.setValueAtTime(0.0001, t2);
+      this.musicBus.gain.setTargetAtTime(0.9, t2, dip / 2);
+    }, dip * 1000);
+  }
+
   stopSong() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     this.song = null;
@@ -1068,6 +1106,23 @@ export class ChipAudio {
     this._blip(240, 90, 0.16, 'sawtooth', 0.09);
     this._blip(1200, 500, 0.1, 'square', 0.04);
   }
+  // main gun overheat: steam hiss + warning tone
+  overheat() {
+    if (!this.ready) return;
+    const c = this.ctx, t = c.currentTime;
+    const s = c.createBufferSource(); s.buffer = this.noiseBuf;
+    const f = c.createBiquadFilter(); f.type = 'lowpass';
+    f.frequency.setValueAtTime(6000, t);
+    f.frequency.exponentialRampToValueAtTime(600, t + 0.9);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.2, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    s.connect(f); f.connect(g); g.connect(this.sfxBus);
+    s.start(t, Math.random()); s.stop(t + 0.95);
+    this._blip(880, 440, 0.3, 'square', 0.07);
+    this._blip(880, 440, 0.3, 'square', 0.07);
+  }
+  cooled() { this._blip(440, 880, 0.15, 'square', 0.06); }
   siren() {
     if (!this.ready) return;
     const c = this.ctx, t = c.currentTime;

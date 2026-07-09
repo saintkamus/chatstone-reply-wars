@@ -51,13 +51,25 @@ export class DualSense {
     }, ms);
   }
 
-  // 'fire'   — weapon-style click partway down the pull
+  // 'fire'   — weapon-style click partway down the pull (the spread gate)
+  // 'heat'   — continuous resistance that stiffens with the heat fraction
   // 'plasma' — heavy continuous resistance while beams are armed
-  // 'off'    — free trigger
-  setTrigger(mode) {
-    if (mode === 'fire') this.state.r2 = [0x02, 0x40, 0xa0, 0xff];
-    else if (mode === 'plasma') this.state.r2 = [0x01, 0x20, 0xff, 0x00];
-    else this.state.r2 = [0x05, 0x00, 0x00, 0x00];
+  // 'loose'  — trigger goes dead: the gun has overheated, let go
+  setTrigger(mode, frac) {
+    let next;
+    if (mode === 'fire') next = [0x02, 0x40, 0xa0, 0xff];
+    else if (mode === 'heat') {
+      // quantize to coarse steps so the resistance climbs in discrete notches
+      // (also keeps HID writes rare — setTrigger dedupes identical states)
+      const step = Math.round(Math.min(1, Math.max(0, frac || 0)) * 10);
+      next = [0x01, 0x28, 0x40 + step * 19, 0x00];
+    } else if (mode === 'plasma') next = [0x01, 0x20, 0xff, 0x00];
+    else next = [0x05, 0x00, 0x00, 0x00]; // 'loose' / off
+    // don't spam HID writes with identical states
+    const sig = next.join(',');
+    if (sig === this._trigSig) return;
+    this._trigSig = sig;
+    this.state.r2 = next;
     this._send();
   }
 }

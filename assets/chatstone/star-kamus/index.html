@@ -41,6 +41,10 @@
   #plasma-wrap{width:92px;height:5px;border:1px solid var(--cyan);margin-top:5px;
     margin-left:auto;background:rgba(0,20,40,.6);}
   #plasma{height:100%;width:100%;background:linear-gradient(90deg,#2fb0ff,#aef4ff);}
+  #heat-wrap{width:92px;height:5px;border:1px solid var(--red);margin-top:3px;
+    margin-left:auto;background:rgba(40,0,10,.6);}
+  #heat{height:100%;width:0%;background:linear-gradient(90deg,#ff8030,#ff2020);}
+  #heat-wrap.hot{animation:msgblink .35s steps(2) infinite;}
 
   /* NOVA bomb flash */
   #flash{position:fixed;inset:0;z-index:60;background:#fff;opacity:0;
@@ -125,6 +129,7 @@
     <div id="hiscore" class="hud-text">HI&nbsp;0</div>
     <div id="power" class="hud-text">PWR&nbsp;&#9646;</div>
     <div id="plasma-wrap"><div id="plasma"></div></div>
+    <div id="heat-wrap"><div id="heat"></div></div>
   </div>
 </div>
 
@@ -183,6 +188,6 @@
 </div>
 
 <!-- bump ?v= when main.js/audio.js change: the preview proxy caches modules hard -->
-<script type="module" src="./main.js?v=14"></script>
+<script type="module" src="./main.js?v=15"></script>
 </body>
 </html>

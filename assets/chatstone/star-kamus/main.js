@@ -1,7 +1,7 @@
 // STAR KAMUS — side-view 3D space shooter. Two stages, two very angry bosses.
 import * as THREE from './vendor/three.module.js';
-import { ChipAudio } from './audio.js?v=14';
-import { DualSense } from './dualsense.js?v=14';
+import { ChipAudio } from './audio.js?v=15';
+import { DualSense } from './dualsense.js?v=15';
 
 const audio = new ChipAudio();
 const dualsense = new DualSense();
@@ -551,6 +551,8 @@ const player = {
   droneMode: 'seeker', // 'seeker' (auto-lock, low dps) | 'plasma' (beams, depletes)
   plasma: 100,     // plasma charge 0..100
   nova: 0,         // stored NOVA bomb (0/1)
+  heat: 0,         // main-gun heat 0..100 (full spread overheats)
+  overheated: false,
   shield: false,   // absorbs one hit
   lives: 3,
   invuln: 0,
@@ -667,6 +669,7 @@ function spawnBeam(pos) {
   b.pierce = 3;
   b.hitSet = new Set();
   audio.beamFire();
+  shotPulse('beam');
 }
 
 // NOVA bomb pickup: rare, blinding, wipes every bullet on screen
@@ -960,8 +963,10 @@ function spawnEnemy(type, y, opts) {
   if (viewMode !== 'side' && (type === 'weaver' || type === 'phantom' || type === 'darter'))
     mesh.rotation.x = Math.PI / 2;
   scene.add(mesh);
+  // late-campaign armor: multi-hit enemies gain +1 hp per three stages
+  const hp = def.hp + (def.hp >= 2 ? Math.floor(stageIdx / 3) : 0);
   enemies.push({
-    type, mesh, hp: def.hp, radius: def.radius, score: def.score,
+    type, mesh, hp, radius: def.radius, score: def.score,
     t: 0, baseY: y, fireCool: 1 + Math.random(), ...o,
   });
 }
@@ -1706,19 +1711,22 @@ function makeSiren() {
   const trimMat = new THREE.MeshStandardMaterial({ color: 0xff70d8, emissive: 0x60204a, metalness: 0.5, roughness: 0.3, transparent: true });
 
   const g = new THREE.Group();
+  const hull = new THREE.Group(); // rolled flat for the chase-cam view
+  g.add(hull);
   const body = new THREE.Mesh(new THREE.ConeGeometry(2.2, 11, 8), hullMat);
   body.rotation.z = Math.PI / 2; // nose toward the player
-  g.add(body);
+  hull.add(body);
   const canopy = new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 10), trimMat);
   canopy.position.set(1.5, 1.2, 0);
   canopy.scale.set(1.6, 0.8, 0.9);
-  g.add(canopy);
+  hull.add(canopy);
   for (const zz of [-1, 1]) { // swept crescent wings
     const wing = new THREE.Mesh(new THREE.TorusGeometry(4, 0.5, 6, 22, Math.PI), trimMat);
     wing.rotation.x = zz * Math.PI / 2.4;
     wing.position.set(2, 0, zz * 2.4);
-    g.add(wing);
+    hull.add(wing);
   }
+  if (viewMode !== 'side') hull.rotation.x = Math.PI / 2;
   const veil = new THREE.Mesh(new THREE.SphereGeometry(6.4, 16, 12),
     new THREE.MeshBasicMaterial({ color: 0xff90e0, transparent: true, opacity: 0, depthWrite: false }));
   g.add(veil);
@@ -2471,8 +2479,8 @@ function vexNextForm() {
   burst(b.mesh.position, 50, 30, 2);
   audio.bigExplode();
   shake = 1.4;
-  // dps-driven music escalation: each form change hardens the theme
-  if (audioStarted) audio.playSong(b.form === 2 ? 'boss12b' : 'boss12c');
+  // dps-driven music escalation: the theme TRANSFORMS with each form
+  if (audioStarted) audio.swapSong(b.form === 2 ? 'boss12b' : 'boss12c', 0.7);
   if (b.form === 2) {
     say('vex', 'Flesh... failed me. The CORE will not. BEHOLD THE EYE OF THE GORGON.', 'v_form2', 3.5);
   } else {
@@ -3959,7 +3967,7 @@ const TIMELINE12 = [
       switchView('rail', { groundColor: 0x241016, fogFar: 260, fogColor: 0x120608,
         railColors: { a: 0xff4040, b: 0x8040ff, arch: 0x802030 } });
       showBanner('THE CORE SHAFT', 3);
-      if (audioStarted) audio.playSong('level12b'); // the theme picks up speed
+      if (audioStarted) audio.swapSong('level12b', 0.6); // the theme picks up speed
     } },
   { t: 38,   fn: () => droneWave(6, 3, 5) },
   { t: 42,   fn: () => { splitters([5, -5]); mineRow([8, 0, -8]); stingers(2); } },
@@ -3971,7 +3979,7 @@ const TIMELINE12 = [
   { t: 70,   fn: () => {
       switchView('side');
       showBanner('THE HEART OF THE GORGON', 3);
-      if (audioStarted) audio.playSong('level12c'); // the theme turns to dread
+      if (audioStarted) audio.swapSong('level12c', 0.6); // the theme turns to dread
     } },
   { t: 72,   fn: () => { phantoms([6, -6]); spawnEnemy('cruiser', 0); } },
   { t: 76,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); splitters([3, -3]); stingers(3, true); } },
@@ -4146,6 +4154,7 @@ let padNovaPrev = false;
 function readInput() {
   let x = 0, y = 0, fire = false, start = false, padFire = false;
   let padPlasma = false, padNova = false;
+  let trig = 0; // analog trigger pull 0..1 — governs main-gun spread
   if (keys['ArrowLeft'] || keys['KeyA']) x -= 1;
   if (keys['ArrowRight'] || keys['KeyD']) x += 1;
   if (keys['ArrowUp'] || keys['KeyW']) y += 1;
@@ -4184,8 +4193,13 @@ function readInput() {
     if (btn(15)) x += 1;
     if (btn(12)) y += 1;
     if (btn(13)) y -= 1;
-    for (const bi of [0, 1, 2, 6, 7]) // A/B/X + triggers = fire
-      if (btn(bi)) { fire = true; padFire = true; }
+    for (const bi of [0, 1, 2, 6]) // A/B/X + LT = fire (digital, full spread)
+      if (btn(bi)) { fire = true; padFire = true; trig = 1; }
+    // RT/R2 is the PRESSURE trigger: pull depth selects the spread level
+    if (pad.buttons[7]) {
+      const v = pad.buttons[7].value || (pad.buttons[7].pressed ? 1 : 0);
+      if (v > 0.05) { fire = true; padFire = true; trig = Math.max(trig, v); }
+    }
     if (btn(3)) padPlasma = true;              // Y = plasma toggle
     if (btn(4) || btn(5)) padNova = true;      // bumpers = NOVA bomb
     if (btn(9) || btn(8)) start = true;        // menu / view
@@ -4198,8 +4212,9 @@ function readInput() {
   padPlasmaPrev = padPlasma;
   const novaEdge = padNova && !padNovaPrev;
   padNovaPrev = padNova;
+  if (fire && trig === 0) trig = 1; // keyboard / face buttons: full pull
   return { x: THREE.MathUtils.clamp(x, -1, 1), y: THREE.MathUtils.clamp(y, -1, 1),
-    fire, startEdge, fireEdge, plasmaEdge, novaEdge };
+    fire, trig, startEdge, fireEdge, plasmaEdge, novaEdge };
 }
 
 function rumble(strong, weak, ms) {
@@ -4503,6 +4518,8 @@ function continueGame() {
   player.plasma = 100;
   player.droneMode = 'seeker';
   player.nova = 0;
+  player.heat = 0;
+  player.overheated = false;
   addScore(0);
   updateLivesHud();
   showMsg('CONTINUE — SUPPLY DROPS INBOUND', 2.5);
@@ -4563,6 +4580,8 @@ function startStage(i, fresh) {
     player.plasma = 100;
     player.droneMode = 'seeker';
     player.nova = 0;
+    player.heat = 0;
+    player.overheated = false;
     saidPower = false;
     saidShield = false;
     saidOrbital = false;
@@ -4723,7 +4742,17 @@ function stageClear() {
 }
 
 // ---------------------------------------------------------------- update
-function firePlayer() {
+// per-shot haptics: each weapon has its own thump (DualSense gets HID pulses,
+// Xbox pads get rumble ticks; harmless without a controller)
+function shotPulse(kind) {
+  if (kind === 1) rumble(0, 0.12, 30);
+  else if (kind === 2) rumble(0.05, 0.2, 35);
+  else if (kind === 3) rumble(0.14, 0.32, 45);
+  else if (kind === 'beam') rumble(0.35, 0.15, 85);
+}
+
+// lvl = spread actually fired this volley (trigger pull, capped by upgrades)
+function firePlayer(lvl) {
   const spawn = (dy, angle) => {
     const b = take(playerBullets);
     if (!b) return;
@@ -4732,9 +4761,10 @@ function firePlayer() {
     b.mesh.rotation.z = Math.PI / 2 + (angle || 0);
     b.life = 1.4;
   };
-  if (player.weapon === 1) spawn(0, 0);
-  else if (player.weapon === 2) { spawn(0.9, 0); spawn(-0.9, 0); }
+  if (lvl === 1) spawn(0, 0);
+  else if (lvl === 2) { spawn(0.9, 0); spawn(-0.9, 0); }
   else { spawn(0.9, 0); spawn(-0.9, 0); spawn(0.4, 0.16); spawn(-0.4, -0.16); }
+  shotPulse(lvl);
   audio.shoot();
 }
 
@@ -4887,10 +4917,33 @@ function updatePlayer(dt, input) {
     if (player.invuln <= 0) ship.visible = true;
   }
 
+  // main gun: trigger pull depth = spread level, capped by collected upgrades.
+  // full spread runs HOT — ride it too long and the gun locks to single shot
+  const zone = input.trig > 0.75 ? 3 : input.trig > 0.4 ? 2 : input.trig > 0 ? 1 : 0;
+  let lvl = Math.min(player.weapon, zone);
+  if (player.overheated) lvl = Math.min(lvl, 1);
   player.fireCool -= dt;
-  if (input.fire && player.fireCool <= 0) {
-    firePlayer();
+  if (input.fire && player.fireCool <= 0 && lvl > 0) {
+    firePlayer(lvl);
     player.fireCool = 0.13;
+  }
+  const firingHot = input.fire && lvl === 3;
+  player.heat = THREE.MathUtils.clamp(player.heat + (firingHot ? 24 : -28) * dt, 0, 100);
+  if (!player.overheated && player.heat >= 100) {
+    player.overheated = true;
+    showMsg('WEAPON OVERHEAT — EASE OFF!', 2);
+    audio.overheat();
+    rumble(0.8, 0.4, 450);
+    dualsense.setTrigger('loose'); // the trigger goes dead in your finger
+  } else if (player.overheated && player.heat <= 30) {
+    player.overheated = false;
+    showMsg('WEAPON COOLED', 1.2);
+    audio.cooled();
+  }
+  // adaptive trigger tracks the gun state (throttled inside setTrigger)
+  if (player.droneMode !== 'plasma' && !player.overheated) {
+    if (player.heat > 35) dualsense.setTrigger('heat', (player.heat - 35) / 65);
+    else dualsense.setTrigger('fire');
   }
   updateDrones(dt, input);
 }
@@ -5325,6 +5378,9 @@ function tick(dt, input) {
     collide();
     el('plasma').style.width = player.plasma + '%';
     el('plasma-wrap').style.opacity = player.options > 0 ? 1 : 0.15;
+    el('heat').style.width = player.heat + '%';
+    el('heat-wrap').style.opacity = player.weapon >= 3 ? 1 : 0.15;
+    el('heat-wrap').classList.toggle('hot', player.overheated);
 
     if (msgTimer > 0) {
       msgTimer -= dt;
