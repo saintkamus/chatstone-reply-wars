@@ -46,6 +46,16 @@
   #heat{height:100%;width:0%;background:linear-gradient(90deg,#ff8030,#ff2020);}
   #heat-wrap.hot{animation:msgblink .35s steps(2) infinite;}
 
+  /* credits roll */
+  #credits{background:rgba(2,3,12,.9);}
+  #credits-window{height:74vh;width:min(680px,92vw);overflow:hidden;position:relative;}
+  #credits-roll{position:absolute;top:0;left:0;right:0;text-align:center;}
+  .cr-h{font-size:13px;letter-spacing:5px;color:var(--cyan);margin:34px 0 10px;}
+  .cr-n{font-size:17px;letter-spacing:3px;color:#fff;margin:6px 0;}
+  .cr-t{font-size:11px;letter-spacing:2px;color:var(--dim);margin:2px 0 14px;}
+  .cr-big{font-size:clamp(24px,5vw,44px);letter-spacing:8px;color:var(--amber);
+    text-shadow:0 0 20px rgba(255,194,62,.7);margin:40px 0;}
+
   /* NOVA bomb flash */
   #flash{position:fixed;inset:0;z-index:60;background:#fff;opacity:0;
     pointer-events:none;transition:opacity .8s ease-out;}
@@ -187,7 +197,35 @@
   <div class="clear-big hud-text" style="color:var(--cyan)">PAUSED</div>
 </div>
 
+<div id="credits" class="overlay">
+  <div id="credits-window">
+    <div id="credits-roll">
+      <div class="cr-big hud-text">STAR&nbsp;KAMUS</div>
+      <div class="cr-t">WRATH&nbsp;OF&nbsp;THE&nbsp;GORGON</div>
+      <div class="cr-h">STARRING</div>
+      <div class="cr-n">LT.&nbsp;KAMUS</div><div class="cr-t">AS&nbsp;HIMSELF</div>
+      <div class="cr-n">COMMANDER&nbsp;ARGO</div><div class="cr-t">THE&nbsp;VOICE&nbsp;OF&nbsp;HOME</div>
+      <div class="cr-n">NOVA&nbsp;VASQUEZ</div><div class="cr-t">HANGAR&nbsp;QUEEN,&nbsp;DRONE&nbsp;MOTHER</div>
+      <div class="cr-n">AMBASSADOR&nbsp;ZERAA</div><div class="cr-t">THE&nbsp;VELVET&nbsp;TRAITOR&nbsp;(REFORMED)</div>
+      <div class="cr-n">DR.&nbsp;KLORP</div><div class="cr-t">FOUR&nbsp;ARMS,&nbsp;ONE&nbsp;BRAIN</div>
+      <div class="cr-n">ADMIRAL&nbsp;VEX</div><div class="cr-t">ETERNAL&nbsp;(RETIRED)</div>
+      <div class="cr-h">FLIGHT&nbsp;SYSTEMS</div>
+      <div class="cr-n">SF-01&nbsp;"SOCK"</div>
+      <div class="cr-t">LUCKY&nbsp;CHARM:&nbsp;ONE&nbsp;(1)&nbsp;GREEN&nbsp;SOCK&nbsp;—&nbsp;UNHARMED</div>
+      <div class="cr-h">MUSIC</div>
+      <div class="cr-n">THE&nbsp;SF-01&nbsp;SOUND&nbsp;CHIP</div><div class="cr-t">PERFORMED&nbsp;LIVE,&nbsp;NO&nbsp;RETAKES</div>
+      <div class="cr-h">SPECIAL&nbsp;WEAPONS&nbsp;CONSULTANT</div>
+      <div class="cr-n">THE&nbsp;KID</div><div class="cr-t">SEEKER&nbsp;DRONES&nbsp;&amp;&nbsp;STINGER&nbsp;PROGRAM</div>
+      <div class="cr-h">FLIGHT&nbsp;RECORD</div>
+      <div class="cr-n" id="cr-stats"></div>
+      <div class="cr-t">SECTOR&nbsp;7&nbsp;THANKS&nbsp;YOU&nbsp;FOR&nbsp;YOUR&nbsp;SERVICE</div>
+      <div class="cr-big hud-text" style="color:var(--cyan)">KAMUS&nbsp;WILL&nbsp;RETURN</div>
+      <div class="cr-t">THE&nbsp;GORGON&nbsp;WILL&nbsp;NOT.&nbsp;&nbsp;PROBABLY.</div>
+    </div>
+  </div>
+</div>
+
 <!-- bump ?v= when main.js/audio.js change: the preview proxy caches modules hard -->
-<script type="module" src="./main.js?v=15"></script>
+<script type="module" src="./main.js?v=16"></script>
 </body>
 </html>

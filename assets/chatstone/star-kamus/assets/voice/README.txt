@@ -84,6 +84,7 @@ k_core      "it's looking at me"        c_warning12  "all of us. GO."
 k_rage      grief into fury             v_eternal    VEX: "kneel before VEX ETERNAL"
 z_sacrifice ZERAA: takes the hit        v_form2      VEX: "BEHOLD THE EYE"
 z_alive     ZERAA: "see you at dinner"  v_end        VEX: dying, almost human
+v_post      VEX: post-credits stinger ("eternal means... patient")
 (k_home — already recorded — plays in the victory curtain call)
 
 All missing-line scripts (wording + emotion directions) live in

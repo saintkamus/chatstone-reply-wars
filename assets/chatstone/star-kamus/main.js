@@ -1,7 +1,7 @@
 // STAR KAMUS — side-view 3D space shooter. Two stages, two very angry bosses.
 import * as THREE from './vendor/three.module.js';
-import { ChipAudio } from './audio.js?v=15';
-import { DualSense } from './dualsense.js?v=15';
+import { ChipAudio } from './audio.js?v=16';
+import { DualSense } from './dualsense.js?v=16';
 
 const audio = new ChipAudio();
 const dualsense = new DualSense();
@@ -40,6 +40,8 @@ const VOICE_IDS = [
   // stage 12 — the finale
   'k_clear11', 'c_briefing12', 'k_stage12', 'c_dive', 'k_core', 'c_warning12',
   'v_eternal', 'v_form2', 'z_sacrifice', 'k_rage', 'v_end', 'z_alive',
+  // credits stinger
+  'v_post',
 ];
 audio.fetchVoices('assets/voice/', VOICE_IDS);
 
@@ -376,6 +378,7 @@ function switchView(mode, opts) {
     for (const d of tile.userData.deco) d.visible = mode !== 'rail';
   if (o.fogFar) scene.fog.far = o.fogFar;
   if (o.fogColor) scene.fog.color.setHex(o.fogColor);
+  setBackdrop(o.backdrop, o.backdropTint);
   for (const p of enemyBullets) release(p);
   for (let i = enemies.length - 1; i >= 0; i--) {
     scene.remove(enemies[i].mesh);
@@ -398,6 +401,7 @@ function applyViewMode(mode) {
   scene.fog.color.setHex(0x02030a);
   // roll the hull so the wings face the camera in overhead/chase views
   shipModel.rotation.x = space ? 0 : Math.PI / 2;
+  refreshBackdrop();
   computeView();
 }
 
@@ -436,6 +440,137 @@ function updateFleet(dt) {
   for (const s of fleetShips) {
     s.position.x -= s.userData.speed * dt;
     if (s.position.x < -view.w * 1.8) s.position.x = view.w * 1.8;
+  }
+}
+
+// ------- side-view backdrop dressing: every stage gets its own skyline -------
+const backdrops = {};
+let backdropName = null;
+const nebulaWisps = [];
+{
+  // 'station': a friendly orbital dock on the horizon (stage 1)
+  const g1 = new THREE.Group();
+  const stMat = new THREE.MeshStandardMaterial({ color: 0x5a6a80, metalness: 0.6, roughness: 0.5 });
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 14, 10), stMat);
+  hub.rotation.z = Math.PI / 2;
+  g1.add(hub);
+  for (const xx of [-4, 4]) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(9, 1.2, 8, 28), stMat);
+    ring.rotation.y = Math.PI / 2;
+    ring.position.x = xx;
+    g1.add(ring);
+  }
+  for (const yy of [-13, 13]) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(10, 5, 0.4),
+      new THREE.MeshStandardMaterial({ color: 0x2a4a7a, metalness: 0.4, roughness: 0.3 }));
+    panel.position.set(0, yy, 0);
+    g1.add(panel);
+  }
+  const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff4040 }));
+  beacon.position.set(0, 8, 0);
+  g1.add(beacon);
+  g1.userData.beacon = beacon;
+  g1.userData.rings = [g1.children[1], g1.children[2]];
+  g1.position.set(18, 6, -70);
+  backdrops.station = g1;
+
+  // 'bigrocks': colossi drifting behind the belt (stage 2)
+  const g2 = new THREE.Group();
+  const brMat = new THREE.MeshStandardMaterial({ color: 0x4a5262, roughness: 1, flatShading: true });
+  for (let i = 0; i < 4; i++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(9 + i * 4, 0), brMat);
+    r.position.set(i * 45 - 60, i * 12 - 18, -60 - i * 12);
+    r.userData.spin = 0.03 + Math.random() * 0.05;
+    r.userData.speed = 1.2 + i * 0.5;
+    g2.add(r);
+  }
+  backdrops.bigrocks = g2;
+
+  // 'nebula': glowing gas banks, tintable per stage (stages 3, 8, finale heart)
+  const g3 = new THREE.Group();
+  for (let i = 0; i < 8; i++) {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff4030, transparent: true, opacity: 0.12, depthWrite: false });
+    const w = new THREE.Mesh(new THREE.CircleGeometry(12 + Math.random() * 16, 12), mat);
+    w.position.set((Math.random() * 2 - 1) * 90, (Math.random() * 2 - 1) * 34, -42 - Math.random() * 30);
+    w.scale.y = 0.5 + Math.random() * 0.4;
+    w.userData.speed = 1 + Math.random() * 2;
+    w.userData.pulse = Math.random() * 6;
+    g3.add(w);
+    nebulaWisps.push(w);
+  }
+  backdrops.nebula = g3;
+
+  // 'wrecks': dead hulks of the first war (stage 6)
+  const g4 = new THREE.Group();
+  const wkMat = new THREE.MeshStandardMaterial({ color: 0x363c46, metalness: 0.6, roughness: 0.7 });
+  for (let i = 0; i < 3; i++) {
+    const wreck = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(26 + i * 8, 5, 4), wkMat);
+    hull.rotation.z = (Math.random() - 0.5) * 0.7;
+    wreck.add(hull);
+    const prow = new THREE.Mesh(new THREE.ConeGeometry(2.4, 7, 4), wkMat);
+    prow.rotation.z = Math.PI / 2 + (Math.random() - 0.5);
+    prow.position.set(-(16 + i * 4), 4, 0);
+    wreck.add(prow);
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.7, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff6020 }));
+    ember.position.set(i * 4 - 4, -1, 2.2);
+    wreck.add(ember);
+    wreck.userData.ember = ember;
+    wreck.position.set(i * 55 - 50, i * 16 - 16, -52 - i * 10);
+    wreck.userData.speed = 1.5 + i * 0.6;
+    g4.add(wreck);
+  }
+  backdrops.wrecks = g4;
+
+  for (const k in backdrops) {
+    backdrops[k].visible = false;
+    scene.add(backdrops[k]);
+  }
+}
+
+function refreshBackdrop() {
+  const show = viewMode === 'side';
+  fleetGroup.visible = show && backdropName === 'fleet';
+  for (const k in backdrops) backdrops[k].visible = show && backdropName === k;
+}
+
+function setBackdrop(name, tint) {
+  backdropName = name || null;
+  if (name === 'nebula' && tint)
+    for (const w of nebulaWisps) w.material.color.setHex(tint);
+  refreshBackdrop();
+}
+
+function updateBackdrop(dt, t) {
+  if (backdropName === 'fleet') { updateFleet(dt); return; }
+  const g = backdrops[backdropName];
+  if (!g || !g.visible) return;
+  if (backdropName === 'station') {
+    for (const r of g.userData.rings) r.rotation.x += 0.12 * dt;
+    g.userData.beacon.visible = Math.floor(t * 1.5) % 2 === 0;
+    g.position.x -= 0.5 * dt;
+    if (g.position.x < -view.w * 1.7) g.position.x = view.w * 1.7;
+  } else if (backdropName === 'bigrocks') {
+    for (const r of g.children) {
+      r.rotation.y += r.userData.spin * dt;
+      r.position.x -= r.userData.speed * dt;
+      if (r.position.x < -view.w * 1.9) r.position.x = view.w * 1.9;
+    }
+  } else if (backdropName === 'nebula') {
+    for (const w of g.children) {
+      w.position.x -= w.userData.speed * dt;
+      w.material.opacity = 0.09 + Math.sin(t * 0.6 + w.userData.pulse) * 0.05;
+      if (w.position.x < -view.w * 2) w.position.x = view.w * 2;
+    }
+  } else if (backdropName === 'wrecks') {
+    for (const wreck of g.children) {
+      wreck.position.x -= wreck.userData.speed * dt;
+      wreck.rotation.z += 0.01 * dt;
+      wreck.userData.ember.visible = Math.floor(t * 2 + wreck.position.x) % 3 !== 0;
+      if (wreck.position.x < -view.w * 1.9) wreck.position.x = view.w * 1.9;
+    }
   }
 }
 
@@ -714,6 +849,7 @@ const rustMat = new THREE.MeshStandardMaterial({ color: 0x8a5a30, metalness: 0.4
 const phantomBaseMat = new THREE.MeshStandardMaterial({ color: 0xb0c0e8, emissive: 0x203050, metalness: 0.6, roughness: 0.3, transparent: true });
 const eggMat = new THREE.MeshStandardMaterial({ color: 0xc8b060, emissive: 0x584010, metalness: 0.1, roughness: 0.45 });
 const stingerMat = new THREE.MeshStandardMaterial({ color: 0xff8020, emissive: 0x501800, metalness: 0.5, roughness: 0.35 });
+const bastionMat = new THREE.MeshStandardMaterial({ color: 0x5a4a72, emissive: 0x160f22, metalness: 0.7, roughness: 0.4 });
 const guardCoreMat = new THREE.MeshStandardMaterial({ color: 0xffa030, emissive: 0x803008, metalness: 0.3, roughness: 0.25 });
 const membraneMat = new THREE.MeshStandardMaterial({ color: 0x7a3040, emissive: 0x240a10, roughness: 0.7 });
 const lancerMat = new THREE.MeshStandardMaterial({ color: 0x8890d8, emissive: 0x181c48, metalness: 0.6, roughness: 0.35 });
@@ -845,6 +981,24 @@ function buildEnemy(type) {
     tip.position.x = -2.8;
     g.add(tip);
     g.userData.tipMat = tipMat;
+  } else if (type === 'bastion') {
+    // a persistent blockade platform: parks mid-screen and duels you
+    const slab = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 1.8, 6), bastionMat);
+    slab.rotation.x = Math.PI / 2; // flat face to camera
+    g.add(slab);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 10, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffd040, emissive: 0x805808, metalness: 0.3 }));
+    g.add(core);
+    g.userData.core = core;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(3.7, 0.28, 6, 24),
+      new THREE.MeshBasicMaterial({ color: 0xb08aff }));
+    g.add(ring);
+    g.userData.ring = ring;
+    for (const yy of [-2.4, 2.4]) {
+      const gun = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.7, 0.7), turretMat);
+      gun.position.set(-1.6, yy, 0);
+      g.add(gun);
+    }
   } else if (type === 'stinger') {
     // kamikaze chaser: hunts you down and detonates in a cross of light
     g.add(new THREE.Mesh(new THREE.OctahedronGeometry(1.1), stingerMat));
@@ -951,6 +1105,7 @@ const ENEMY_DEFS = {
   cruiser: { hp: 14, radius: 3.6, score: 800 }, // rolling broadside walls
   stinger: { hp: 1, radius: 1.4, score: 150 }, // kamikaze chaser, cross-blast on death
   guardian:{ hp: 40, radius: 3.0, score: 1500 }, // two-form mid-boss
+  bastion: { hp: 26, radius: 3.4, score: 1000 }, // persistent blockade platform
 };
 
 function spawnEnemy(type, y, opts) {
@@ -1113,7 +1268,9 @@ function updateEnemies(dt) {
       m.position.x -= sp * dt;
       m.rotation.x += 6 * dt;
     } else if (e.type === 'turret') {
-      m.position.x -= 9 * dt;
+      // gun emplacements HOLD their ground now — they leave when you make them
+      e.holdX = e.holdX ?? play.fw * (0.35 + Math.random() * 0.3);
+      if (m.position.x > e.holdX) m.position.x -= 9 * dt;
       m.rotation.z += 1.2 * dt;
       e.fireCool -= dt;
       if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
@@ -1259,6 +1416,41 @@ function updateEnemies(dt) {
           }
         }
       } else m.position.x -= 32 * dt; // done: punches past you
+    } else if (e.type === 'bastion') {
+      // rolls in, parks, and cycles three attack patterns until destroyed
+      e.holdX = e.holdX ?? play.fw * 0.55;
+      if (!e.parked) {
+        m.position.x -= 10 * dt;
+        if (m.position.x <= e.holdX) e.parked = true;
+      } else {
+        e.hopT = (e.hopT ?? 5) - dt;
+        if (e.hopT <= 0) { // repositions to a fresh firing lane
+          e.targetY = (Math.random() * 2 - 1) * (play.lat - 8);
+          e.hopT = 7;
+        }
+        if (e.targetY !== undefined)
+          m.position.y += THREE.MathUtils.clamp(e.targetY - m.position.y, -1, 1) * 8 * dt;
+        m.position.x = e.holdX + Math.sin(e.t * 0.7) * 2;
+      }
+      m.userData.ring.rotation.z += 2 * dt;
+      m.userData.core.scale.setScalar(1 + Math.sin(e.t * 5) * 0.12);
+      e.fireCool -= dt;
+      if (e.fireCool <= 0 && m.position.x < play.fw - 4 && player.alive) {
+        e.pattern = ((e.pattern ?? -1) + 1) % 3;
+        const from = m.position.clone();
+        if (e.pattern === 0) { // aimed burst
+          for (let k = 0; k < 3; k++)
+            setTimeout(() => { if (state === 'playing' && player.alive) enemyFire(from, 26); }, k * 130);
+        } else if (e.pattern === 1) { // fan
+          for (let k = -2; k <= 2; k++) enemyFire(from, 21, k * 0.24);
+        } else { // ring
+          const off = Math.random() * Math.PI;
+          for (let k = 0; k < 10; k++)
+            enemyFireAngle(from, off + k / 10 * Math.PI * 2, 15);
+          audio.enemyShoot();
+        }
+        e.fireCool = 3.2;
+      }
     } else if (e.type === 'stinger') {
       if (player.alive) {
         const dx = player.pos.x - m.position.x, dy = player.pos.y - m.position.y;
@@ -3588,7 +3780,7 @@ const TIMELINE1 = [
   { t: 6,    fn: () => droneWave(5, -8, 5) },
   { t: 10,   fn: () => darterStack([10, 3, -4, -11]) },
   { t: 14,   fn: () => { droneWave(4, 8, 4); spawnEnemy('turret', -6); } },
-  { t: 19,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('turret', -8); droneWave(4, 0, 7); } },
+  { t: 19,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('turret', -8); spawnEnemy('bastion', 0); droneWave(4, 0, 7); } },
   { t: 25,   fn: () => say('commander',
       "Heads up — heavy gunship on your scope. It's armored, but it's carrying weapon pods. Take it down.", 'c_heavy', 3) },
   { t: 26,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); droneWave(4, -10, 3); } },
@@ -3596,7 +3788,7 @@ const TIMELINE1 = [
   { t: 34,   fn: () => darterStack([9, 3, -3, -9]) },
   { t: 38,   fn: () => { droneWave(7, 6, 8); spawnEnemy('turret', -10); } },
   { t: 44,   fn: () => { spawnEnemy('heavy', -6); spawnEnemy('heavy', 8); } },
-  { t: 51,   fn: () => { droneWave(6, 12, 4, 300); droneWave(6, -12, 4, 300); } },
+  { t: 51,   fn: () => { droneWave(6, 12, 4, 300); droneWave(6, -12, 4, 300); spawnEnemy('bastion', -5); } },
   { t: 58,   fn: () => { spawnEnemy('turret', 0); spawnEnemy('turret', 10); spawnEnemy('turret', -10); darterStack([5, -5]); } },
   { t: 65,   fn: () => { spawnEnemy('heavy', 0, { drops: true }); spawnEnemy('turret', 9); spawnEnemy('turret', -9); } },
   { t: 72,   fn: () => { droneWave(9, 0, 12, 260); } },
@@ -3614,11 +3806,11 @@ const TIMELINE2 = [
   { t: 13,   fn: () => say('commander', "Minefield ahead! Don't brush against anything that blinks.", 'c_mines', 3) },
   { t: 14,   fn: () => mineRow([10, 5, 0, -5, -10]) },
   { t: 19,   fn: () => darterStack([8, 2, -4, -10]) },
-  { t: 24,   fn: () => { orbiterPair(8); orbiterPair(-8); droneWave(4, 0, 6) } },
+  { t: 24,   fn: () => { orbiterPair(8); orbiterPair(-8); spawnEnemy('bastion', 2); droneWave(4, 0, 6) } },
   { t: 30,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); mineRow([9, -9]); } },
   { t: 37,   fn: () => { darterStack([11, 5, -1, -7]); spawnEnemy('turret', 0); } },
   { t: 43,   fn: () => mineRow([12, 8, 4, 0, -4, -8, -12]) },
-  { t: 49,   fn: () => { orbiterPair(5); orbiterPair(-5); droneWave(5, 10, 4); } },
+  { t: 49,   fn: () => { orbiterPair(5); orbiterPair(-5); spawnEnemy('bastion', -5); droneWave(5, 10, 4); } },
   { t: 56,   fn: () => { spawnEnemy('heavy', -6); spawnEnemy('heavy', 8, { drops: true }); } },
   { t: 63,   fn: () => droneWave(10, 0, 12, 260) },
   { t: 69,   fn: () => { spawnEnemy('turret', 9); spawnEnemy('turret', -9); orbiterPair(0); } },
@@ -3701,12 +3893,12 @@ const TIMELINE3 = [
   { t: 16,   fn: () => { orbiterPair(7); orbiterPair(-7); spawnEnemy('weaver', 0); } },
   { t: 21,   fn: () => { raiders(4); droneWave(5, 0, 10); } },
   { t: 26,   fn: () => { spawnEnemy('heavy', 4, { drops: true }); spawnEnemy('heavy', -8); weaverWall([10, -2]); } },
-  { t: 31,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('turret', 0); spawnEnemy('turret', -8); darterStack([10, 4, -2, -8, -12]) } },
+  { t: 31,   fn: () => { spawnEnemy('turret', 8); spawnEnemy('bastion', 0); spawnEnemy('turret', -8); darterStack([10, 4, -2, -8, -12]) } },
   { t: 35,   fn: () => say('zeraa', "Intelligence confirms it, darling — the swarm thickens near the fortress. You're getting close.", 'z_swarm', 3) },
   { t: 36,   fn: () => { droneWave(12, 0, 12, 200); raiders(3); } },
   { t: 41,   fn: () => { mineRow([12, 8, 4, 0, -4, -8, -12]); weaverWall([6, -6, 0]); } },
   { t: 46,   fn: () => { orbiterPair(9); orbiterPair(0); orbiterPair(-9); darterStack([11, 5, -1, -7, -11, 8]); } },
-  { t: 52,   fn: () => { spawnEnemy('heavy', 6, { drops: true }); spawnEnemy('heavy', -6); spawnEnemy('turret', 0); spawnEnemy('turret', 11); droneWave(6, -11, 4, 250); } },
+  { t: 52,   fn: () => { spawnEnemy('heavy', 6, { drops: true }); spawnEnemy('heavy', -6); spawnEnemy('bastion', 0); spawnEnemy('turret', 11); droneWave(6, -11, 4, 250); } },
   { t: 58,   fn: () => { raiders(6); mineRow([8, 0, -8]); } },
   { t: 63,   fn: () => { weaverWall([12, 6, -6, -12]); droneWave(8, 0, 9, 250); } },
   { t: 69,   fn: () => { spawnEnemy('turret', 10); spawnEnemy('turret', -10); spawnEnemy('turret', 5); spawnEnemy('turret', -5); darterStack([13, 9, 3, -3, -9, -13, 0]); } },
@@ -3775,7 +3967,7 @@ const TIMELINE6 = [
   { t: 19,   fn: () => { weaverWall([8, -8]); darterStack([10, 3, -4, -11]); } },
   { t: 24,   fn: () => mineRow([9, 0, -9]) },
   { t: 29,   fn: () => { spawnEnemy('heavy', 3, { drops: true }); spawnEnemy('turret', -8); spawnEnemy('turret', 10); } },
-  { t: 35,   fn: () => { raiders(4); droneWave(6, 0, 8); } },
+  { t: 35,   fn: () => { raiders(4); spawnEnemy('bastion', 0); droneWave(6, 0, 8); } },
   { t: 41,   fn: () => { weaverWall([9, 0, -9]); mineRow([6, -6]); } },
   { t: 47,   fn: () => { orbiterPair(8); orbiterPair(0); orbiterPair(-8); darterStack([12, 6, -6, -12]); } },
   { t: 53,   fn: () => { spawnEnemy('heavy', -5); spawnEnemy('heavy', 7, { drops: true }); spawnEnemy('turret', 0); } },
@@ -3851,7 +4043,7 @@ const TIMELINE8 = [
   { t: 19,   fn: () => phantoms([9, 0, -9]) },
   { t: 24,   fn: () => { spawnEnemy('lancer', 6); spawnEnemy('lancer', -6); darterStack([10, -10]); } },
   { t: 29,   fn: () => { spawnEnemy('heavy', 2, { drops: true }); phantoms([5, -5]); } },
-  { t: 35,   fn: () => { orbiterPair(7); orbiterPair(-7); splitters([8, 0, -8]); } },
+  { t: 35,   fn: () => { orbiterPair(7); orbiterPair(-7); spawnEnemy('bastion', 0); splitters([8, -8]); } },
   { t: 41,   fn: () => { mineRow([9, 0, -9]); phantoms([6, -6]); weaverWall([2, -2]); } },
   { t: 47,   fn: () => { spawnEnemy('lancer', 8); spawnEnemy('guardian', 0); spawnEnemy('lancer', -8); } },
   { t: 53,   fn: () => { spawnEnemy('heavy', -4); spawnEnemy('heavy', 6, { drops: true }); phantoms([8, -8]); } },
@@ -3902,7 +4094,7 @@ const TIMELINE10 = [
   { t: 26,   fn: () => { spawnEnemy('cruiser', -6); spawnEnemy('heavy', 6, { drops: true }); } },
   { t: 32,   fn: () => { phantoms([7, -7]); darterStack([11, 5, -5, -11]); } },
   { t: 36,   fn: argoVolley },
-  { t: 38,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); droneWave(6, 0, 8); } },
+  { t: 38,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); spawnEnemy('bastion', 3); droneWave(6, 0, 8); } },
   { t: 45,   fn: () => { spawnEnemy('guardian', 4); spawnEnemy('lancer', -6); mineRow([8, 0, -8]); } },
   { t: 50,   fn: () => say('vex', 'You burn my children... and dare approach MY fleet? Come then, little pilot. Come DIE at scale.', 'v_taunt10', 4) },
   { t: 52,   fn: () => { spawnEnemy('cruiser', 0); spawnEnemy('heavy', -8, { drops: true }); weaverWall([10, -10]); } },
@@ -3960,7 +4152,7 @@ const TIMELINE12 = [
   { t: 12,   fn: () => { spawnEnemy('cruiser', 6); raiders(4); } },
   { t: 17,   fn: () => { tankRow([12, 4, -4, -12]); spawnEnemy('lancer', 0); } },
   { t: 22,   fn: () => { spawnEnemy('heavy', -5, { drops: true }); burrowers([6, -6], 0.45); } },
-  { t: 27,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); weaverWall([2, -2]); } },
+  { t: 27,   fn: () => { spawnEnemy('cruiser', 8); spawnEnemy('cruiser', -8); spawnEnemy('bastion', 0); weaverWall([2, -2]); } },
   { t: 31,   fn: () => { tankRow([8, -8]); raiders(3); } },
   { t: 33,   fn: () => say('commander', "The intake shaft is open — Zeraa's codes, one last time. DIVE, Kamus. Straight down its throat!", 'c_dive', 3.5) },
   { t: 36,   fn: () => {
@@ -3977,7 +4169,7 @@ const TIMELINE12 = [
   { t: 62,   fn: () => { phantoms([5, -5]); mineRow([6, -6]); droneWave(8, 0, 9, 260); } },
   { t: 67,   fn: () => say('kamus', "I can see it. The heart. It's... it's looking at me.", 'k_core', 3) },
   { t: 70,   fn: () => {
-      switchView('side');
+      switchView('side', { backdrop: 'nebula', backdropTint: 0xff3050 });
       showBanner('THE HEART OF THE GORGON', 3);
       if (audioStarted) audio.swapSong('level12c', 0.6); // the theme turns to dread
     } },
@@ -3991,6 +4183,7 @@ const TIMELINE12 = [
 const STAGES = [
   {
     name: 'STAGE 1 — SECTOR 7 APPROACH', place: 'SECTOR 7',
+    backdrop: 'station',
     song: 'level', bossSong: 'boss',
     bossName: 'GORGON VORTEX - DREAD CARRIER',
     timeline: TIMELINE1, ambient: null, makeBoss: makeCarrier,
@@ -4002,6 +4195,7 @@ const STAGES = [
   },
   {
     name: 'STAGE 2 — THE SHATTERED BELT', place: 'THE SHATTERED BELT',
+    backdrop: 'bigrocks',
     song: 'level2', bossSong: 'boss2',
     bossName: 'BASILISK REX - BELT SERPENT',
     timeline: TIMELINE2, ambient: beltAmbient, makeBoss: makeSerpent,
@@ -4010,6 +4204,7 @@ const STAGES = [
   },
   {
     name: "STAGE 3 — THE GORGON'S MAW", place: "THE GORGON'S MAW",
+    backdrop: 'nebula', backdropTint: 0xff4030,
     song: 'level3', bossSong: 'boss3',
     bossName: 'MEDUSA PRIME - FORTRESS CORE',
     timeline: TIMELINE3, ambient: mawAmbient, makeBoss: makeFortress,
@@ -4036,6 +4231,7 @@ const STAGES = [
   },
   {
     name: 'STAGE 6 — ORBITAL JUNKYARD', place: 'THE ORBITAL JUNKYARD',
+    backdrop: 'wrecks',
     song: 'level6', bossSong: 'boss6',
     bossName: 'SCRAP COLOSSUS - GRAVE GOLEM',
     timeline: TIMELINE6, ambient: junkAmbient, makeBoss: makeColossus,
@@ -4059,6 +4255,7 @@ const STAGES = [
   },
   {
     name: 'STAGE 8 — NEBULA OF GHOSTS', place: 'THE GHOST NEBULA',
+    backdrop: 'nebula', backdropTint: 0x40c890,
     song: 'level8', bossSong: 'boss8',
     bossName: 'MIRROR KAMUS - GORGON REPLICA',
     fogFar: 120, fogColor: 0x0e1a14,
@@ -4082,7 +4279,7 @@ const STAGES = [
   },
   {
     name: 'STAGE 10 — THE VEX ARMADA', place: 'THE VEX ARMADA',
-    fleet: true,
+    backdrop: 'fleet',
     song: 'level10', bossSong: 'boss10',
     bossName: "CHROME FANG - VEX'S FLAGSHIP",
     timeline: TIMELINE10, ambient: null, makeBoss: makeChromeFang,
@@ -4503,12 +4700,15 @@ function firstGesture() {
 function menuAdvance() {
   if (state === 'title') startGame();
   else if (state === 'gameover') continueGame();
-  else if (state === 'victory') toTitle();
+  else if (state === 'victory') startCredits();
+  else if (state === 'credits') toTitle();
 }
 
 // arcade continue: same stage, score wiped, a fighting-chance loadout,
 // and emergency supply drops so you can rebuild before the boss
+let continuesUsed = 0;
 function continueGame() {
+  continuesUsed++;
   score = 0;
   startStage(stageIdx, false);
   player.lives = 3;
@@ -4545,11 +4745,13 @@ function toTitle() {
   cleanupField();
   audio.stopVoices();
   applyViewMode('side');
+  setBackdrop(null);
   ship.rotation.set(0, 0, 0);
   state = 'title';
   el('gameover').classList.remove('on');
   el('clear').classList.remove('on');
   el('victory').classList.remove('on');
+  el('credits').classList.remove('on');
   el('title').classList.add('on');
   el('hud').classList.remove('on');
   updateStageSelect();
@@ -4558,7 +4760,49 @@ function toTitle() {
 
 function startGame() {
   audio.stopVoices();
+  continuesUsed = 0;
   startStage(selectedStage, true);
+}
+
+// ---------------------------------------------------------------- credits
+let creditsT = 0;
+let creditsRollH = 0;
+let creditsStinger = false;
+function startCredits() {
+  cleanupField();
+  audio.stopVoices();
+  applyViewMode('side');
+  setBackdrop('station');
+  state = 'credits';
+  el('victory').classList.remove('on');
+  el('hud').classList.remove('on');
+  el('cr-stats').textContent =
+    'FINAL SCORE: ' + score + '   ·   CONTINUES USED: ' + continuesUsed;
+  el('credits').classList.add('on');
+  creditsT = 0;
+  creditsStinger = false;
+  creditsRollH = el('credits-roll').offsetHeight;
+  ship.visible = true;
+  if (audioStarted) audio.playSong('credits');
+}
+
+function updateCredits(dt) {
+  creditsT += dt;
+  const holdArea = el('credits-window').offsetHeight;
+  const y = holdArea - creditsT * 30; // px/s crawl
+  el('credits-roll').style.transform = 'translateY(' + y + 'px)';
+  // Vex gets the last word, of course
+  if (!creditsStinger && y < -(creditsRollH - holdArea * 0.8)) {
+    creditsStinger = true;
+    say('vex', 'Eternal means... patient, little pilot. Enjoy your dinner.', 'v_post', 4);
+  }
+  // gentle attract flight under the roll
+  const t = clock.elapsedTime;
+  player.pos.set(-play.fw + 14 + Math.sin(t * 0.5) * 4, Math.sin(t * 0.7) * 6, 0);
+  ship.position.copy(player.pos);
+  ship.rotation.x = Math.sin(t * 0.7) * -0.25;
+  ship.userData.flame.scale.y = 0.8 + Math.random() * 0.4;
+  if (y < -(creditsRollH + 60)) toTitle(); // rolled out — back to the marquee
 }
 
 function startStage(i, fresh) {
@@ -4626,7 +4870,7 @@ function startStage(i, fresh) {
     for (const d of tile.userData.deco) d.visible = st.view !== 'rail';
   if (st.fogFar) scene.fog.far = st.fogFar;      // e.g. the Ghost Nebula closes in
   if (st.fogColor) scene.fog.color.setHex(st.fogColor);
-  fleetGroup.visible = !!st.fleet;
+  setBackdrop(st.backdrop, st.backdropTint);
   zeraaRunT = -1;
   zeraaDart.visible = false;
   showBanner(st.name);
@@ -4738,6 +4982,8 @@ function stageClear() {
     }
     el('v-score').textContent = 'FINAL SCORE : ' + score;
     el('victory').classList.add('on');
+    // let the curtain-call comms breathe, then roll credits
+    setTimeout(() => { if (state === 'victory') startCredits(); }, 24000);
   }
 }
 
@@ -4871,8 +5117,8 @@ function updatePlayer(dt, input) {
   }
   if (viewMode === 'rail')
     player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 8, -play.fw + 24);
-  else
-    player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 4, play.fw * 0.35);
+  else // the whole screen belongs to the pilot
+    player.pos.x = THREE.MathUtils.clamp(player.pos.x, -play.fw + 4, play.fw - 5);
   let latLim = play.lat - 5.5;
   if (viewMode === 'top' && STAGES[stageIdx].canyon)
     latLim = Math.min(latLim, canyonWallY() - 5); // the canyon squeezes you in
@@ -5283,11 +5529,11 @@ function frame() {
   if (input.startEdge) {
     const consumed = firstGesture();
     if (!consumed) {
-      if (state === 'title' || state === 'gameover' || state === 'victory') menuAdvance();
+      if (state === 'title' || state === 'gameover' || state === 'victory' || state === 'credits') menuAdvance();
       else if (state === 'playing' || state === 'paused') togglePause();
     }
   } else if (input.fireEdge &&
-      (state === 'title' || state === 'gameover' || state === 'victory')) {
+      (state === 'title' || state === 'gameover' || state === 'victory' || state === 'credits')) {
     // A / fire also advances menus — Start alone was easy to miss on some pads
     if (!firstGesture()) menuAdvance();
   }
@@ -5343,7 +5589,7 @@ function frame() {
 
 function tick(dt, input) {
   updateZeraaRun(dt);
-  if (fleetGroup.visible) updateFleet(dt);
+  updateBackdrop(dt, clock.elapsedTime);
   if (viewMode !== 'side') {
     updateGround(dt);
   } else {
@@ -5388,6 +5634,7 @@ function tick(dt, input) {
     }
   } else {
     updateBullets(dt);
+    if (state === 'credits') updateCredits(dt);
     if (state === 'title') {
       ship.visible = true;
       const t = clock.elapsedTime;

@@ -744,6 +744,32 @@ const SONG_BOSS12C = {
   ],
 };
 
+// ---------- CREDITS : "Coming Home" (A major, 112bpm, warm) ----------
+const CREDITS_LEAD = [
+  [0, 69, 1], [1, 73, 1], [2, 76, 1.5], [3.5, 74, .5],
+  [4, 74, 1], [5, 73, .5], [5.5, 71, .5], [6, 69, 2],
+  [8, 71, 1], [9, 73, .5], [9.5, 74, .5], [10, 76, 1.5], [11.5, 78, .5],
+  [12, 81, 2], [14, 80, 1], [15, 78, 1],
+  [16, 78, 1], [17, 76, 1], [18, 74, 1.5], [19.5, 73, .5],
+  [20, 74, 1], [21, 76, .5], [21.5, 74, .5], [22, 73, 2],
+  [24, 71, 1], [25, 73, .5], [25.5, 74, .5], [26, 76, 1], [27, 78, 1],
+  [28, 76, 1], [29, 74, 1], [30, 69, 2],
+];
+const CREDITS_ROOTS = [45, 50, 52, 45, 42, 50, 52, 45]; // A D E A F#m D E A
+const CREDITS_STABS = [[61, 64], [62, 66], [64, 68], [61, 64], [57, 61], [62, 66], [64, 68], [61, 64]];
+
+const SONG_CREDITS = {
+  bpm: 112, beats: 32, loop: true,
+  tracks: [
+    { wave: 'triangle', gain: 0.22, vib: 4, notes: CREDITS_LEAD },
+    { wave: 'square', gain: 0.035, detune: 6, notes: CREDITS_LEAD.map(n => [n[0], n[1] + 12, n[2]]) },
+    { wave: 'triangle', gain: 0.24, notes: bars((s, r) => bassBar(s, r, [0, 0, 7, 0, 0, 12, 7, 0]), CREDITS_ROOTS) },
+    { wave: 'square', gain: 0.028, notes: CREDITS_STABS.map((t, i) => stabBar(i * 4, t)).flat() },
+    { drums: true, notes: [0, 1, 2, 3, 4, 5, 6, 7].map(i => drumBar(i * 4,
+        { kick: [0], snare: [2], hat: [1, 3] })).flat() },
+  ],
+};
+
 // ---------- VICTORY FANFARE ----------
 const SONG_VICTORY = {
   bpm: 132, beats: 12, loop: false,
@@ -782,6 +808,7 @@ const SONGS = {
   level12: SONG_LEVEL12, boss12: SONG_BOSS12,
   level12b: SONG_LEVEL12B, level12c: SONG_LEVEL12C,
   boss12b: SONG_BOSS12B, boss12c: SONG_BOSS12C,
+  credits: SONG_CREDITS,
 };
 
 // ---------- engine ----------
