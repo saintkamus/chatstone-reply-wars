@@ -4700,8 +4700,8 @@ function firstGesture() {
 function menuAdvance() {
   if (state === 'title') startGame();
   else if (state === 'gameover') continueGame();
-  else if (state === 'victory') startCredits();
-  else if (state === 'credits') toTitle();
+  // victory is input-proof: the curtain call plays out, then credits roll
+  else if (state === 'credits' && creditsT > 3) toTitle();
 }
 
 // arcade continue: same stage, score wiped, a fighting-chance loadout,
